@@ -10,7 +10,6 @@ class ConfigLoader:
         self.config_dir.mkdir(parents=True, exist_ok=True)
 
     def load_beacons_from_csv(self, map_file: str, delimiter: str = ";") -> List[Dict[str, Any]]:
-        # оставь для совместимости, если где-то вызывается напрямую
         return self._load_csv(Path(self.config_dir / map_file), delimiter)
 
     def load_beacons(self, map_id: str, delimiter: str = ";") -> List[Dict[str, Any]]:
@@ -23,12 +22,18 @@ class ConfigLoader:
             return self._load_csv(bea_path, delimiter)
         raise FileNotFoundError(f"Map files not found: {csv_path.name} or {bea_path.name}")
 
-    def _load_csv(self, path: Path, delimiter: str) -> List[Dict[str, Any]]:
+    def _load_csv(self, path: Path, default_delimiter: str) -> List[Dict[str, Any]]:
         beacons: List[Dict[str, Any]] = []
         with path.open("r", encoding="utf-8") as f:
-            sample = f.read(1024)
+            sample = f.read(2048)
             f.seek(0)
+            try:
+                dialect = csv.Sniffer().sniff(sample, delimiters=";, \t")
+                delimiter = dialect.delimiter
+            except Exception:
+                delimiter = default_delimiter or ";"
             has_header = csv.Sniffer().has_header(sample)
+
             if has_header:
                 reader = csv.DictReader(f, delimiter=delimiter)
                 for row in reader:
