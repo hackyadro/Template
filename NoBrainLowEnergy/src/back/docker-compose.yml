@@ -24,32 +24,32 @@ services:
       - nobrainlowenergy
 
   # Mosquitto MQTT Broker
-  # mosquitto:
-  #   image: eclipse-mosquitto:2.0
-  #   container_name: nobrainlowenergy-mqtt
-  #   ports:
-  #     - "1883:1883"  # Non-TLS port хз мб это убрать стоит??
-  #     - "8883:8883"  # TLS port
-  #   volumes:
-  #     - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
-  #     - ./certs:/mosquitto/certs
-  #     - mosquitto_data:/mosquitto/data
-  #     - mosquitto_logs:/mosquitto/log
-  #   restart: unless-stopped
-  #   networks:
-  #     - nobrainlowenergy
-
   mosquitto:
-    image: eclipse-mosquitto:latest
-    container_name: mosquitto
+    image: eclipse-mosquitto:2.0
+    container_name: nobrainlowenergy-mqtt
     ports:
-      - "1883:1883"  # Default MQTT port
-      - "9001:9001"  # Default MQTT over WebSockets port
+      - "1883:1883"  # Non-TLS port хз мб это убрать стоит??
+      - "8883:8883"  # TLS port
     volumes:
-      - ./mosquitto/config:mosquitto.conf
-      - ./mosquitto/data:/mosquitto/data
-      - ./mosquitto/log:/mosquitto/log
+      - ./:/mosquitto/config
+      - ./certs:/mosquitto/certs
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_logs:/mosquitto/log
     restart: unless-stopped
+    networks:
+      - nobrainlowenergy
+
+  # mosquitto:
+  #   image: eclipse-mosquitto:latest
+  #   container_name: mosquitto
+  #   ports:
+  #     - "1883:1883"  # Default MQTT port
+  #     - "9001:9001"  # Default MQTT over WebSockets port
+  #   volumes:
+  #     - ./:/mosquitto/config
+  #     - ./mosquitto/data:/mosquitto/data
+  #     - ./mosquitto/log:/mosquitto/log
+  #   restart: unless-stopped
 
   # Redis (optional - for caching and session storage) мне кажется это лишнее
   redis:
