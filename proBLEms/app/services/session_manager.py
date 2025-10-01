@@ -32,7 +32,7 @@ class SessionManager:
         """Создаёт новую сессию отслеживания"""
         session_id = str(uuid.uuid4())
         try:
-            beacons = self.config_loader.load_beacons_from_csv(f"{config.get('beaconMapId','office')}.csv")
+            beacons = self.config_loader.load_beacons(config.get("beaconMapId", "standart"))
             with self._lock:
                 self.active_sessions[session_id] = {
                     "config": config,

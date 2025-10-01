@@ -35,16 +35,14 @@ def scan_data(data: ScannerData, sm: SessionManager = Depends(get_session_manage
 
 @router.get("/beacons")
 def get_beacons(sm: SessionManager = Depends(get_session_manager)) -> Dict[str, Any]:
-    # Для MVP — возвращаем текущую карту из последней активной сессии или дефолтную
-    beacons = []
     if sm.active_sessions:
-        # берём любую активную/последнюю
-        sid, s = next(iter(sm.active_sessions.items()))
-        beacons = s["beacons"]
+        _, s = next(iter(sm.active_sessions.items()))
+        return {"beacons": s["beacons"]}
     else:
         from app.services.config_loader import ConfigLoader
-        beacons = ConfigLoader().load_beacons_from_csv("office.csv")
-    return {"beacons": beacons}
+        beacons = ConfigLoader().load_beacons("standart")
+        return {"beacons": beacons}
+
 
 
 @router.get("/session/{session_id}/info", response_model=Union[SessionInfo, Dict[str, Any]])
