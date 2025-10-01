@@ -1,0 +1,54 @@
+version: "3.9"
+
+services:
+  streamlit:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev   # для разработки; на проде поменяй на docker/Dockerfile
+    container_name: streamlit_app
+    ports:
+      - "${STREAMLIT_PORT-8501}:8501"
+    environment:
+      - STREAMLIT_SERVER_HEADLESS=true
+      - PYTHONPATH=/app
+      # свои переменные (подключение к брокеру, токены и т.п.)
+      - MQTT_HOST=mosquitto
+      - MQTT_PORT=1883
+      - MQTT_USER=${MQTT_USER:-deviceuser}
+      - MQTT_PASS=${MQTT_PASS:-secret}
+    volumes:
+      - ./app:/app           # live-изменения кода
+    depends_on:
+      - mosquitto            # если используешь локальный брокер
+
+  # Фоновый воркер/подписчик, пишет в файл или БД
+  subscriber:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    container_name: beacons_subscriber
+    command: ["python", "subscriber.py"]   # отдельный entrypoint
+    environment:
+      - MQTT_HOST=mosquitto
+      - MQTT_PORT=1883
+      - MQTT_USER=${MQTT_USER:-deviceuser}
+      - MQTT_PASS=${MQTT_PASS:-secret}
+      - OUT_FILE=/data/beacons.log
+    volumes:
+      - ./app:/app
+      - ./data:/data          # логи/данные на хосте
+    depends_on:
+      - mosquitto
+
+  # (опционально) локальный MQTT-брокер
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mosquitto
+    ports:
+      - "1883:1883"           # доступ из локалки
+      # - "9001:9001"         # если нужны websockets
+    volumes:
+      - ./docker/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./docker/passwd:/mosquitto/config/passwd:ro
+      - ./data/mosq:/mosquitto/data
+      - ./data/mosq-log:/mosquitto/log

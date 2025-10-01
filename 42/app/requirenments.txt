@@ -1,0 +1,10 @@
+streamlit
+pandas
+matplotlib
+pyserial
+streamlit
+fastapi
+uvicorn[standard]
+paho-mqtt
+redis
+pandas

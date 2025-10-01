@@ -3,8 +3,6 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 from pathlib import Path
-from datetime import datetime
-import json
 
 from position import estimate_xy
 
