@@ -5,13 +5,11 @@ from pydantic import BaseModel, Field
 class BeaconReading(BaseModel):
     """Данные измерения от одного маяка"""
     beaconId: str
-    rssi: float
+    distance: float
 
 
 class ScannerData(BaseModel):
     """Данные от устройства-сканера"""
-    sessionId: str
-    scannerId: str
     beaconReadings: List[BeaconReading]
     timestamp: Optional[float] = None
 
@@ -27,7 +25,6 @@ class Position(BaseModel):
 class SessionConfig(BaseModel):
     """Конфигурация новой сессии"""
     frequency: float = 5.0
-    beaconMapId: str = "standart"
 
 
 class SessionInfo(BaseModel):
