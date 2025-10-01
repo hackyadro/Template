@@ -7,7 +7,7 @@ from typing import Dict, Any
 import logging
 from datetime import datetime
 
-from mqtt_client import MQTTClientqw
+from mqtt_client import MQTTClient
 from models import MessageModel, DeviceStatus, MQTTMessage
 from config import settings
 from routes import router, set_mqtt_client
