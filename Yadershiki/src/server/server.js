@@ -4,9 +4,12 @@ import path from 'path';
 import compression from 'compression';
 import bodyParser from 'body-parser';
 import cors from 'cors';
+import { fileURLToPath } from 'url';
 
 dotenv.config();
 const port = process.env.PORT;
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 app.use(compression());
@@ -17,7 +20,7 @@ let clients = [];
 let state = [];
 
 app.get('/', (req, res) => {
-	res.sendFile(path.join(import.meta.dirname, 'index.html'));
+	res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 app.get('/beacons', (req, res) => {
