@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  #Express.js сервер
+  app:
+    build:
+      context: .  # путь к Dockerfile
+      dockerfile: Dockerfile  # Dockerfile с Node.js
+    container_name: my-app
+    ports:
+      - "8080:8080"  # сервер на порту 8080
+    environment:
+      - NODE_ENV=production
+      - MQTT_HOST=emqx  # используем имя сервиса для подключения к EMQX
+      - MQTT_PORT=1883
+    depends_on:
+      - emqx  # гарантируем, что EMQX запустится первым
+    restart: unless-stopped
+    volumes:
+      - ./:/app  # для разработки: монтируем код для hot-reload
+      - /app/node_modules  # исключаем node_modules из монтирования
+
+  # MQTT брокер EMQX
+  emqx:
+    image: emqx/emqx:5.4
+    container_name: emqx
+    ports:
+      - "1883:1883"   # MQTT порт
+      - "8083:8083"   # MQTT over WebSocket
+      - "8084:8084"   # MQTT over WebSocket SSL
+      - "8883:8883"   # MQTT SSL
+      - "8081:18083"  # Web Dashboard
+    environment:
+      - EMQX_NODE_NAME=emqx@localhost
+    restart: unless-stopped
+
+# Сеть для общения между контейнерами
+networks:
+  default:
+    name: app-network
