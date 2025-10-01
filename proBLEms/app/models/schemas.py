@@ -27,7 +27,7 @@ class Position(BaseModel):
 class SessionConfig(BaseModel):
     """Конфигурация новой сессии"""
     frequency: float = 5.0
-    beaconMapId: str = "office"
+    beaconMapId: str = "standart"
 
 
 class SessionInfo(BaseModel):
