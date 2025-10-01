@@ -2,8 +2,24 @@ services:
   service:
     build: ./
     command: ./service
+    depends_on:
+      - mosquitto
     ports: 
-      - 8089:8098 # внешний:внутренний
+      - ${SERVICE_PORT}:${SERVICE_INTERNAL_PORT} # внешний:внутренний
     env_file:
       - .env
-
+  mosquitto:
+    image: eclipse-mosquitto
+    container_name: mosquitto
+    restart: unless-stopped
+    ports:
+      - "${MOSQUITTO_PORT}:${MOSQUITTO_INTERNAL_PORT}"
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
+    env_file:
+      - .env
+  temp_publisher:
+    build: ./
+    command: ./temp_publisher
+    depends_on:
+      - mosquitto
