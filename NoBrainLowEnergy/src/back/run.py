@@ -60,7 +60,8 @@ def run_server(host="0.0.0.0", port=8000, reload=True):
             host=host,
             port=port,
             reload=reload,
-            log_level="info"
+            ssl_keyfile="./certs/server.key",
+            ssl_certfile="./certs/server.crt"
         )
     except ImportError:
         print("Error: uvicorn not installed. Run with --install-deps first")
