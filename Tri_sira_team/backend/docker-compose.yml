@@ -1,0 +1,9 @@
+services:
+  service:
+    build: ./
+    command: ./service
+    ports: 
+      - 8089:8098 # внешний:внутренний
+    env_file:
+      - .env
+
