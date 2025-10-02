@@ -183,8 +183,6 @@ async def ping(request: MacRequest, db: AsyncSession = Depends(get_db)):
     Проверить наличие изменений для клиента.
     Возвращает список необработанных изменений и помечает их как отправленные.
     """
-    start_time = time.time()
-
     # Автоматически создаём устройство если не существует
     device_id = await get_or_create_device(request.mac, db)
 
@@ -220,8 +218,6 @@ async def ping(request: MacRequest, db: AsyncSession = Depends(get_db)):
     )
     await db.commit()
 
-    elapsed_ms = (time.time() - start_time) * 1000
-    print(f"Ping processed in {elapsed_ms:.2f} ms (changes: {change_list})")
     return PingResponse(change=True, change_list=change_list)
 
 
