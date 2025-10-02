@@ -11,15 +11,17 @@ class Trilateration:
         if rssi <= -100: return 20.0
         
         distance = 10 ** ((self.tx_power - rssi) / (10 * self.path_loss_exponent))
-        print(distance)
         return max(0.1, min(20.0, distance))
     
     def calculate_position(self, beacons_data):
+        """Возвращает позицию и использованные маяки"""
+        # Сортируем по RSSI (лучшие сигналы первыми)
         sorted_beacons = sorted(beacons_data, key=lambda x: x['rssi'], reverse=True)
         
         if len(sorted_beacons) < 3:
-            return None
+            return None, []
             
+        # Берем 3 маяка с лучшим сигналом
         beacons = sorted_beacons[:3]
 
         A = np.array([beacons[0]['position']['x'], beacons[0]['position']['y']])
@@ -33,12 +35,13 @@ class Trilateration:
         result = self.three_circles_intersection(A, B, C, rA, rB, rC)
         
         if result:
-            return {
+            position = {
                 'x': round(float(result[0]), 2),
                 'y': round(float(result[1]), 2)
             }
+            return position, beacons
         
-        return None
+        return None, []
     
     def three_circles_intersection(self, A, B, C, rA, rB, rC):
         """

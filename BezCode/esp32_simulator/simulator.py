@@ -12,30 +12,31 @@ try:
     client.loop_start()
     print("✅ Connected to MQTT broker")
 
-    beacons = [
-        {"mac": "AA:BB:CC:DD:EE:01", "position": {"x": 0, "y": 0}, "name": "Beacon 1"},
-        {"mac": "AA:BB:CC:DD:EE:02", "position": {"x": 5, "y": 0}, "name": "Beacon 2"},
-        {"mac": "AA:BB:CC:DD:EE:03", "position": {"x": 2.5, "y": 5}, "name": "Beacon 3"}
-    ]
+    # Используем имена из standart.beacons
+    beacon_names = ["beacon_1", "beacon_2", "beacon_3", "beacon_4", "beacon_5"]
 
     angle = 0
+    counter = 0
+    
     while True:
-        x = 2.5 + 2.0 * math.cos(angle)
-        y = 2.5 + 2.0 * math.sin(angle)
-        angle += 0.15
+        # Симулируем движение по кругу
+        x = 2.5 + 1.5 * math.cos(angle)
+        y = 2.5 + 1.5 * math.sin(angle)
+        angle += 0.1
         
+        # Выбираем случайные маяки
+        active_beacons = random.sample(beacon_names, random.randint(3, 5))
         beacons_data = []
-        for beacon in beacons:
-            distance = math.sqrt((x - beacon['position']['x'])**2 + (y - beacon['position']['y'])**2)
-            rssi = -46 - 10 * 2.4 * math.log10(distance) if distance > 0.1 else -35
-            rssi += random.uniform(-5, 5)
-            rssi = max(-100, min(-30, rssi))
+        
+        for beacon_name in active_beacons:
+            # Реалистичный RSSI based on distance from center
+            base_rssi = -50
+            rssi_variation = random.randint(-5, 5)
+            rssi = base_rssi + rssi_variation
             
             beacons_data.append({
-                'mac': beacon['mac'],
-                'rssi': int(rssi),
-                'position': beacon['position'],
-                'name': beacon['name'],
+                'name': beacon_name,
+                'rssi': rssi,
                 'timestamp': time.time()
             })
         
@@ -46,10 +47,13 @@ try:
         }
         
         client.publish("ble/beacons/raw", json.dumps(mqtt_payload))
-        print(f"📡 Simulated: ({x:.2f}, {y:.2f}) - {len(beacons_data)} beacons")
+        counter += 1
+        print(f"📡 [{counter}] Simulated position: ({x:.2f}, {y:.2f}) - Beacons: {[b['name'] for b in beacons_data]}")
         
-        time.sleep(0.2)
+        time.sleep(2)
 
 except Exception as e:
-    print(f"❌ Error: {e}")
+    print(f"❌ Simulator error: {e}")
+    import traceback
+    traceback.print_exc()
     time.sleep(10)
