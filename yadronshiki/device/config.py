@@ -1,0 +1,9 @@
+WIFI_SSID = "realme"
+WIFI_PASS = "123456789"
+
+MQTT_BROKER = "10.57.189.61"
+MQTT_PORT = 1883
+MQTT_CLIENT_ID = b"esp32-s3-ble"
+MQTT_TOPIC = b"beacons/discovered"
+
+SCAN_DURATION_MS = 333
