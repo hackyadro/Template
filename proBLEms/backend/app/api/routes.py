@@ -40,7 +40,7 @@ async def stop_session(req: StopSessionRequest, sm: SessionManager = Depends(
 @router.get("/beacons")
 def get_beacons(sm: SessionManager = Depends(get_session_manager)) -> Dict[str, Any]:
     from app.services.config_loader import ConfigLoader
-    beacons = ConfigLoader().load_beacons_from_csv("office.csv")
+    beacons = ConfigLoader().load_beacons_from_csv("standart.beacons")
     return {"beacons": beacons}
 
 

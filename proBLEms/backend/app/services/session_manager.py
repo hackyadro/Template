@@ -6,6 +6,9 @@ import threading
 from typing import Dict, List, Any, Optional
 
 from fastapi import WebSocket
+import paho.mqtt.client as mqtt
+
+from app.mqtt_config import MQTT_CONFIG
 from app.services.positioning import PositioningService, Kalman2D
 from app.services.config_loader import ConfigLoader
 
@@ -17,7 +20,9 @@ class SessionManager:
     Для отправки в WS используем event loop FastAPI.
     """
 
-    def __init__(self, loop: Optional[asyncio.AbstractEventLoop] = None):
+    def __init__(self, loop: Optional[
+            asyncio.AbstractEventLoop] = None):
+        self.mqtt_client = None
         self.active_session: Dict[str, Any] = {}
         self.websocket_connections: List[WebSocket] = []
         self.positioning = PositioningService()
@@ -27,6 +32,9 @@ class SessionManager:
 
     def set_loop(self, loop: asyncio.AbstractEventLoop):
         self.loop = loop
+
+    def set_mqqt_client(self, mqqt_client: mqtt.Client):
+        self.mqqt_client = mqqt_client
 
     def start_session(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Создаёт новую сессию отслеживания"""
@@ -39,7 +47,8 @@ class SessionManager:
 
         session_id = str(uuid.uuid4())
         try:
-            beacons = self.config_loader.load_beacons_from_csv("office.csv")
+            beacons = self.config_loader.load_beacons_from_csv(
+                "standart.beacons")
             with self._lock:
                 self.active_session = {
                     "id": session_id,
@@ -51,6 +60,9 @@ class SessionManager:
                     "status": "active",
                     "kf": Kalman2D(),  # фильтр на сессию
                 }
+            period_ms = int(1000 / float(config["frequency"]))
+            print(period_ms)
+            self.publish_scan_duration(period_ms)
             return {
                 "sessionId": session_id,
                 "status": "started",
@@ -64,6 +76,14 @@ class SessionManager:
                 "status": "error",
                 "message": f"Failed to start session: {e}"
             }
+
+    def publish_scan_duration(self, duration):
+        if not self.mqqt_client.is_connected():
+            return
+        try:
+            self.mqqt_client.publish(MQTT_CONFIG["topic_config"], duration)
+        except Exception as e:
+            print(f"[MQTT] publish error: {e}")
 
     async def stop_session(self, session_id: str) -> Dict[str, Any]:
         """Останавливает сессию, закрывает WS"""

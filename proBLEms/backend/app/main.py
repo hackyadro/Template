@@ -41,6 +41,7 @@ async def on_startup():
         password=MQTT_CONFIG["password"],
         keepalive=MQTT_CONFIG["keepalive"],
     )
+    session_manager.set_mqqt_client(mqtt_client.client)
     print("Startup complete.")
 
 

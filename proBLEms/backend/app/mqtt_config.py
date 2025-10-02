@@ -6,5 +6,5 @@ MQTT_CONFIG = {
     "password": os.getenv("MQTT_PASSWORD"),
     "keepalive": 60,
     "topic_scan": "indoor/scan/data",
-    "topic_control": "indoor/control/#",
+    "topic_config": "indoor/config",
 }
