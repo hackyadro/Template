@@ -2,11 +2,14 @@ import Konva from 'konva';
 import './style.css';
 import 'normalize.css';
 import drawPoints, { drawPoint, mapCoordinates } from './points';
+import PathRecord from './pathRecord';
 
 Konva.hitOnDragEnabled = true;
 const API_URL = import.meta.env.VITE_API_URL;
 
-let stage = new Konva.Stage({
+const record = new PathRecord();
+
+const stage = new Konva.Stage({
 	container: 'convas',
 	width: window.innerWidth,
 	height: window.innerHeight,
@@ -40,6 +43,7 @@ const positionSource = new EventSource(`${API_URL}/api/position`);
 positionSource.onmessage = async (event) => {
 	try {
 		const data = await JSON.parse(event.data);
+		record.add(data.x, data.y);
 		const {x, y} = mapCoordinates(origin, center, step, data);
 
 		user.x(x);
