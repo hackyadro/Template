@@ -18,7 +18,17 @@ mqtt_client: Optional[MQTTClient] = None
 
 # WebSocket subscribers for distances streaming
 _distance_subscribers: set[asyncio.Queue] = set()
+# Constants shared by WebSocket info endpoints
 _distance_heartbeat_interval: float = 30.0
+_WS_DISTANCE_MESSAGE_SHAPE = {
+    "type": "distances",
+    "topic": "<topic>",
+    "timestamp": "ISO8601",
+    "data": {
+        "names": ["..."],
+        "distances": [0.0]
+    },
+}
 # Store the main event loop to schedule coroutines from non-async threads (e.g., Paho MQTT callbacks)
 _event_loop: Optional[asyncio.AbstractEventLoop] = None
 
@@ -77,6 +87,27 @@ def set_mqtt_client(client: MQTTClient):
     except Exception:
         # If client not ready yet, ignore; main may call this again later
         pass
+
+
+def build_ws_distances_info(endpoint: str) -> dict:
+    """Return metadata describing the distances WebSocket endpoint."""
+    return {
+        "endpoint": endpoint,
+        "protocol": "websocket",
+        "usage": (
+            "Connect with a WebSocket client to ws://<host>:8000"
+            f"{endpoint} to receive distance events."
+        ),
+        "message_shape": {
+            "type": _WS_DISTANCE_MESSAGE_SHAPE["type"],
+            "topic": _WS_DISTANCE_MESSAGE_SHAPE["topic"],
+            "timestamp": _WS_DISTANCE_MESSAGE_SHAPE["timestamp"],
+            "data": {
+                "names": list(_WS_DISTANCE_MESSAGE_SHAPE["data"]["names"]),
+                "distances": list(_WS_DISTANCE_MESSAGE_SHAPE["data"]["distances"]),
+            },
+        },
+    }
 
 
 @router.get("/devices", response_model=PaginatedResponse)
@@ -290,14 +321,9 @@ async def ws_distances(websocket: WebSocket):
             pass
 
 # Allow HTTP GET on the same path to avoid 404 when accessed via browser/HTTP
-@router.get("/ws/distances")
-async def ws_distances_info():
-    return {
-        "endpoint": "/api/v1/ws/distances",
-        "protocol": "websocket",
-        "usage": "Connect with a WebSocket client to ws://<host>:8000/api/v1/ws/distances to receive distance events.",
-        "message_shape": {"type": "distances", "topic": "<topic>", "timestamp": "ISO8601", "data": {"names": ["..."], "distances": [0.0]}},
-    }
+@router.api_route("/ws/distances", methods=["GET", "HEAD"], include_in_schema=False)
+async def ws_distances_info() -> dict:
+    return build_ws_distances_info("/api/v1/ws/distances")
 
 # REST endpoint to return recent MQTT messages
 @router.get("/mqtt/messages")

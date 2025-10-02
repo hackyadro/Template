@@ -11,7 +11,7 @@ import os
 from mqtt_client import MQTTClient
 from models import MessageModel, DeviceStatus, MQTTMessage
 from config import settings
-from routes import router, set_mqtt_client
+from routes import router, set_mqtt_client, build_ws_distances_info
 import routes as routes_module
 from fastapi.responses import JSONResponse, RedirectResponse
 
@@ -180,15 +180,10 @@ async def ws_distances(websocket: WebSocket):
         except Exception:
             pass
 
-# HTTP GET endpoint for /ws/distances to provide info
-@app.get("/ws/distances")
+# HTTP GET/HEAD endpoint for /ws/distances to provide info
+@app.api_route("/ws/distances", methods=["GET", "HEAD"], include_in_schema=False)
 async def ws_distances_info():
-    return {
-        "endpoint": "/ws/distances",
-        "protocol": "websocket",
-        "usage": "Connect with a WebSocket client to ws://<host>:8000/ws/distances to receive distance events.",
-        "message_shape": {"type": "distances", "topic": "<topic>", "timestamp": "ISO8601", "data": {"names": ["..."], "distances": [0.0]}},
-    }
+    return build_ws_distances_info("/ws/distances")
 
 # Backward-compat redirect: support /devices → /api/v1/devices
 @app.get("/devices")
