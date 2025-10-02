@@ -12,6 +12,8 @@ RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
     openssl \
+    mosquitto-clients \
+    mosquitto \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies

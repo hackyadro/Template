@@ -11,12 +11,16 @@ services:
       - MQTT_BROKER_HOST=mosquitto
       - MQTT_BROKER_PORT=1883
       - MQTT_BROKER_PORT_SAFE=8883
-      - MQTT_USE_TLS=false
+      - MQTT_USE_TLS=true
       - MQTT_CA_CERT_PATH=/app/certs/ca.crt
       - MQTT_CERT_FILE_PATH=/app/certs/client.crt
       - MQTT_KEY_FILE_PATH=/app/certs/client.key
       - MQTT_CLIENT_ID=nobrainlowenergy-backend
       - MQTT_USERNAME=your_mqtt_username
+      - FASTAPI_TLS_ON=false
+      # Add SSL_KEY_FILE and SSL_CERT_FILE if you want HTTPS enabled for FastAPI
+      # - SSL_KEY_FILE=/app/certs/server.key
+      # - SSL_CERT_FILE=/app/certs/server.crt
     volumes:
       - ./certs:/app/certs:ro
       - ./logs:/app/logs

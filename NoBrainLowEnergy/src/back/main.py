@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import uvicorn
@@ -12,6 +12,7 @@ from mqtt_client import MQTTClient
 from models import MessageModel, DeviceStatus, MQTTMessage
 from config import settings
 from routes import router, set_mqtt_client
+from fastapi.responses import JSONResponse
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -28,7 +29,6 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting FastAPI application with MQTT integration")
 
-    # Read MQTT configuration directly from environment variables (no settings class)
     def _env_int(name: str, default: int) -> int:
         v = os.getenv(name)
         try:
@@ -45,16 +45,15 @@ async def lifespan(app: FastAPI):
     if use_tls_env is not None:
         use_tls = use_tls_env.strip().lower() in ("1", "true", "yes", "on")
     else:
-        # If USE_TLS not provided, infer from presence of certs
         cert_file = os.getenv("MQTT_CERT_FILE_PATH")
         key_file = os.getenv("MQTT_KEY_FILE_PATH")
         use_tls = bool(cert_file and key_file)
 
-    # Choose appropriate port based on TLS usage
     broker_port_final = broker_port_safe if use_tls else broker_port
 
     username = os.getenv("MQTT_USERNAME")
     password = os.getenv("MQTT_PASSWORD")
+
     ca_cert_path = os.getenv("MQTT_CA_CERT_PATH")
     cert_file_path = os.getenv("MQTT_CERT_FILE_PATH")
     key_file_path = os.getenv("MQTT_KEY_FILE_PATH")
@@ -213,17 +212,24 @@ if __name__ == "__main__":
     if debug_env is not None:
         debug_flag = debug_env.strip().lower() in ("1", "true", "yes", "on")
     else:
-        # fallback to settings.DEBUG if present, else False
         debug_flag = getattr(settings, "DEBUG", False)
 
-    use_ssl_env = os.getenv("USE_SSL", None)
-    if use_ssl_env is not None:
-        use_ssl = use_ssl_env.strip().lower() in ("1", "true", "yes", "on")
+    # FastAPI TLS logic (independent)
+    fastapi_tls_env = os.getenv("FASTAPI_TLS_ON", None)
+    if fastapi_tls_env is not None:
+        fastapi_tls_on = fastapi_tls_env.strip().lower() in ("1", "true", "yes", "on")
     else:
-        use_ssl = getattr(settings, "USE_SSL", False)
+        fastapi_tls_on = False
 
-    ssl_keyfile = os.getenv("SSL_KEY_FILE", None) if use_ssl else None
-    ssl_certfile = os.getenv("SSL_CERT_FILE", None) if use_ssl else None
+    ssl_keyfile = os.getenv("SSL_KEY_FILE", None) if fastapi_tls_on else None
+    ssl_certfile = os.getenv("SSL_CERT_FILE", None) if fastapi_tls_on else None
+
+    if fastapi_tls_on:
+        if not ssl_keyfile or not ssl_certfile:
+            print("ERROR: FASTAPI_TLS_ON is enabled but SSL_KEY_FILE or SSL_CERT_FILE is not set.")
+            print("Set both SSL_KEY_FILE and SSL_CERT_FILE environment variables.")
+            import sys
+            sys.exit(1)
 
     uvicorn.run(
         "main:app",
@@ -233,3 +239,34 @@ if __name__ == "__main__":
         ssl_keyfile=ssl_keyfile,
         ssl_certfile=ssl_certfile
     )
+    if debug_env is not None:
+        debug_flag = debug_env.strip().lower() in ("1", "true", "yes", "on")
+    else:
+        debug_flag = getattr(settings, "DEBUG", False)
+
+    # FastAPI TLS logic (independent)
+    fastapi_tls_env = os.getenv("FASTAPI_TLS_ON", None)
+    if fastapi_tls_env is not None:
+        fastapi_tls_on = fastapi_tls_env.strip().lower() in ("1", "true", "yes", "on")
+    else:
+        fastapi_tls_on = False
+
+    ssl_keyfile = os.getenv("SSL_KEY_FILE", None) if fastapi_tls_on else None
+    ssl_certfile = os.getenv("SSL_CERT_FILE", None) if fastapi_tls_on else None
+
+    if fastapi_tls_on:
+        if not ssl_keyfile or not ssl_certfile:
+            print("ERROR: FASTAPI_TLS_ON is enabled but SSL_KEY_FILE or SSL_CERT_FILE is not set.")
+            print("Set both SSL_KEY_FILE and SSL_CERT_FILE environment variables.")
+            import sys
+            sys.exit(1)
+
+    uvicorn.run(
+        "main:app",
+        host=api_host,
+        port=api_port,
+        reload=debug_flag,
+        ssl_keyfile=ssl_keyfile,
+        ssl_certfile=ssl_certfile
+    )
+
