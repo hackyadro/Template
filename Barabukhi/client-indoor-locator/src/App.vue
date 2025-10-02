@@ -48,6 +48,93 @@ const newDeviceMapId = ref<string | null>(null);
 const newDeviceFrequency = ref(1); // Гц
 const newDeviceColor = ref<string>('');
 
+// WebSocket: состояние и помощники
+const ws = ref<WebSocket | null>(null);
+const wsReady = ref(false);
+const backendWsUrl = ref<string>(
+  (typeof location !== 'undefined' && location.hostname)
+    ? `ws://${location.hostname}:8000/ws`
+    : 'ws://localhost:8000/ws'
+);
+
+type InMsg = { type: string; data: any };
+type OutMsg = { type: string; data: any };
+
+const sendWs = (msg: OutMsg) => {
+  if (ws.value && wsReady.value) {
+    try {
+      ws.value.send(JSON.stringify(msg));
+    } catch (e) {
+      console.error('WS send error', e);
+    }
+  } else {
+    console.warn('WS is not ready');
+  }
+};
+
+const applyAllDevice = (data: any) => {
+  const arr = Array.isArray(data) ? data : [];
+  for (const d of arr) {
+    const mac = d.mac as string;
+    if (!mac) continue;
+    const existing = devices.value.find(x => x.mac === mac);
+    if (existing) {
+      existing.name = d.name ?? existing.name;
+      existing.pollFrequency = d.freq ?? existing.pollFrequency;
+      existing.mapId = d.map_set ?? existing.mapId;
+    } else {
+      devices.value.push({
+        id: Date.now().toString() + '_' + mac,
+        name: d.name ?? mac,
+        mac,
+        color: getNextColor(),
+        pollFrequency: d.freq ?? 1,
+        mapId: d.map_set ?? selectedMapId.value ?? null,
+        path: [],
+        isPolling: false,
+        pollIntervalId: null,
+        visible: true,
+      });
+    }
+  }
+};
+
+const applyListMap = (data: any) => {
+  const payload = data?.maps ?? [];
+  const newMaps: Map[] = [];
+  for (const m of payload) {
+    const beacons: Beacon[] = Array.isArray(m.beacons)
+      ? m.beacons.map((b: any) => ({ name: String(b.name), x: Number(b.x), y: Number(b.y) }))
+      : [];
+    newMaps.push({ id: String(m.id), name: String(m.name), beacons, createdAt: new Date() });
+  }
+  if (newMaps.length > 0) {
+    maps.value = newMaps;
+    if (!selectedMapId.value) selectedMapId.value = newMaps[0].id;
+  }
+};
+
+const handleWsMessage = (msg: InMsg) => {
+  if (!msg || typeof msg.type !== 'string') return;
+  if (msg.type === 'all_device') return applyAllDevice(msg.data);
+  if (msg.type === 'list_map') return applyListMap(msg.data);
+  if (msg.type === 'write_road') {
+    const ok = !!msg.data?.ok;
+    if (!ok) console.error('write_road error:', msg.data);
+    return;
+  }
+  console.warn('Unhandled WS type:', msg.type, msg.data);
+};
+
+// helper to send current map's paths to server (optional)
+const sendWriteRoad = () => {
+  const points: { x: number; y: number }[] = [];
+  for (const d of devicesOnSelectedMap.value) {
+    for (const p of d.path) points.push({ x: p.x, y: p.y });
+  }
+  sendWs({ type: 'write_road', data: { points } });
+};
+
 // Вычисляемые свойства
 const selectedMap = computed((): Map | undefined => 
   maps.value.find((m: Map) => m.id === selectedMapId.value)
@@ -316,11 +403,44 @@ onMounted(() => {
   loadFromLocalStorage();
   // Автозаполнение цвета для формы
   newDeviceColor.value = getNextColor();
+
+  // Подключение к WebSocket бэкенда
+  try {
+    const socket = new WebSocket(backendWsUrl.value);
+    ws.value = socket;
+    socket.onopen = () => {
+      wsReady.value = true;
+      // начальные запросы
+      sendWs({ type: 'get_all_device', data: {} });
+      sendWs({ type: 'get_list_map', data: {} });
+    };
+    socket.onclose = () => {
+      wsReady.value = false;
+    };
+    socket.onerror = () => {
+      wsReady.value = false;
+    };
+    socket.onmessage = (ev) => {
+      try {
+        const packet = JSON.parse(String(ev.data));
+        handleWsMessage(packet);
+      } catch (e) {
+        console.error('WS message parse error', e);
+      }
+    };
+  } catch (e) {
+    console.error('WS connect failed', e);
+  }
 });
 
 onUnmounted(() => {
   // Остановка всех устройств
   devices.value.forEach((d: Device) => stopDevicePolling(d.id));
+  if (ws.value) {
+    try { ws.value.close(); } catch {}
+    ws.value = null;
+    wsReady.value = false;
+  }
 });
 
 // Сохраняем в localStorage при изменениях
