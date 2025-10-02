@@ -98,6 +98,14 @@ class DeviceCreateRequest(BaseModel):
     color: str = '#3b82f6'
 
 
+class DeviceUpdateRequest(BaseModel):
+    """Запрос на обновление устройства"""
+    name: Optional[str] = None
+    map_id: Optional[int] = None
+    poll_frequency: Optional[float] = None
+    color: Optional[str] = None
+
+
 class DeviceResponse(BaseModel):
     """Ответ с данными устройства"""
     id: int

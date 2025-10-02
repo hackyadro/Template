@@ -11,7 +11,7 @@ from app.models import (
     PingResponse, SendSignalRequest, SendSignalResponse,
     # Frontend API models
     MapCreateRequest, MapResponse2, BeaconResponse,
-    DeviceCreateRequest, DeviceResponse,
+    DeviceCreateRequest, DeviceUpdateRequest, DeviceResponse,
     PositionRequest, PositionResponse, PathPoint, DevicePathResponse
 )
 from app.positioning import PositioningEngine, BeaconData
@@ -54,28 +54,74 @@ async def health_check(db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=503, detail=f"Database connection failed: {str(e)}")
 
 
+# ==================== HELPER FUNCTIONS ====================
+
+async def get_or_create_device(mac: str, db: AsyncSession) -> int:
+    """
+    Получить или создать устройство по MAC адресу.
+    Возвращает device_id.
+    """
+    # Проверяем существование устройства
+    result = await db.execute(
+        text("SELECT id FROM devices WHERE mac = :mac"),
+        {"mac": mac}
+    )
+    device = result.first()
+
+    if device:
+        return device.id
+
+    # Создаём устройство с дефолтными настройками
+    # Привязываем к дефолтной карте если она есть
+    map_result = await db.execute(
+        text("SELECT id FROM maps ORDER BY id LIMIT 1")
+    )
+    map_data = map_result.first()
+    map_id = map_data.id if map_data else None
+
+    insert_result = await db.execute(
+        text("""
+            INSERT INTO devices (name, mac, map_id, poll_frequency, color)
+            VALUES (:name, :mac, :map_id, :poll_frequency, :color)
+            RETURNING id
+        """),
+        {
+            "name": f"Device_{mac}",
+            "mac": mac,
+            "map_id": map_id,
+            "poll_frequency": 1.0,
+            "color": "#3b82f6"
+        }
+    )
+    await db.commit()
+    return insert_result.scalar()
+
+
 # ==================== PHP CLIENT API (совместимость) ====================
 
 @app.post("/get_freq", response_model=FreqResponse)
 async def get_freq(request: MacRequest, db: AsyncSession = Depends(get_db)):
     """Получить частоту для MAC адреса (из таблицы devices)"""
+    # Автоматически создаём устройство если не существует
+    await get_or_create_device(request.mac, db)
+
+    # Получаем частоту устройства
     result = await db.execute(
         text("SELECT poll_frequency FROM devices WHERE mac = :mac"),
         {"mac": request.mac}
     )
     device = result.first()
 
-    if not device:
-        # Возвращаем дефолтную частоту
-        return FreqResponse(freq=1)
-
     # Конвертируем poll_frequency (Гц) в целое число
     return FreqResponse(freq=int(float(device.poll_frequency)))
 
 
 @app.post("/get_status_road", response_model=StatusRoadResponse)
-async def get_status_road(_request: MacRequest, _db: AsyncSession = Depends(get_db)):
+async def get_status_road(request: MacRequest, db: AsyncSession = Depends(get_db)):
     """Получить статус записи маршрута (всегда True для фронтенда)"""
+    # Автоматически создаём устройство если не существует
+    await get_or_create_device(request.mac, db)
+
     # Фронтенд всегда сохраняет позиции
     return StatusRoadResponse(write_road=True)
 
@@ -83,6 +129,9 @@ async def get_status_road(_request: MacRequest, _db: AsyncSession = Depends(get_
 @app.post("/get_map", response_model=MapResponse)
 async def get_map(request: MacRequest, db: AsyncSession = Depends(get_db)):
     """Получить данные карты и список маяков для MAC адреса"""
+    # Автоматически создаём устройство если не существует
+    await get_or_create_device(request.mac, db)
+
     # Получаем устройство по MAC
     result = await db.execute(
         text("SELECT map_id FROM devices WHERE mac = :mac"),
@@ -90,7 +139,7 @@ async def get_map(request: MacRequest, db: AsyncSession = Depends(get_db)):
     )
     device = result.first()
 
-    if not device or not device.map_id:
+    if not device.map_id:
         # Возвращаем дефолтную карту
         map_result = await db.execute(
             text("SELECT id, name FROM maps WHERE name = 'office_floor_1' LIMIT 1")
@@ -121,10 +170,45 @@ async def get_map(request: MacRequest, db: AsyncSession = Depends(get_db)):
 
 
 @app.post("/ping", response_model=PingResponse)
-async def ping(_request: MacRequest, _db: AsyncSession = Depends(get_db)):
-    """Проверить наличие изменений для клиента (пока заглушка)"""
-    # TODO: Реализовать логику отслеживания изменений
-    return PingResponse(change=False, change_list=[])
+async def ping(request: MacRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Проверить наличие изменений для клиента.
+    Возвращает список необработанных изменений и помечает их как отправленные.
+    """
+    # Автоматически создаём устройство если не существует
+    device_id = await get_or_create_device(request.mac, db)
+
+    # Получаем необработанные изменения для устройства
+    changes_result = await db.execute(
+        text("""
+            SELECT DISTINCT change_type
+            FROM device_changes
+            WHERE device_id = :device_id AND is_notified = false
+            ORDER BY change_type
+        """),
+        {"device_id": device_id}
+    )
+    changes = changes_result.fetchall()
+
+    if not changes:
+        # Нет изменений
+        return PingResponse(change=False, change_list=[])
+
+    # Формируем список изменений
+    change_list = [row.change_type for row in changes]
+
+    # Помечаем все изменения как отправленные
+    await db.execute(
+        text("""
+            UPDATE device_changes
+            SET is_notified = true
+            WHERE device_id = :device_id AND is_notified = false
+        """),
+        {"device_id": device_id}
+    )
+    await db.commit()
+
+    return PingResponse(change=True, change_list=change_list)
 
 
 @app.post("/send_signal", response_model=SendSignalResponse)
@@ -376,6 +460,83 @@ async def create_device(device: DeviceCreateRequest, db: AsyncSession = Depends(
             "color": device.color
         }
     )
+    await db.commit()
+    d = result.first()
+
+    return DeviceResponse(
+        id=d.id,
+        name=d.name,
+        mac=d.mac,
+        map_id=d.map_id,
+        poll_frequency=float(d.poll_frequency),
+        color=d.color,
+        created_at=d.created_at,
+        updated_at=d.updated_at
+    )
+
+
+@app.patch("/api/devices/{device_id}", response_model=DeviceResponse)
+async def update_device(device_id: int, device: DeviceUpdateRequest, db: AsyncSession = Depends(get_db)):
+    """Обновить устройство (например, изменить map_id или poll_frequency)"""
+    # Проверяем существование устройства
+    check_result = await db.execute(
+        text("SELECT id FROM devices WHERE id = :device_id"),
+        {"device_id": device_id}
+    )
+    if not check_result.first():
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    # Формируем SQL для обновления только переданных полей
+    update_fields = []
+    params = {"device_id": device_id}
+
+    if device.name is not None:
+        update_fields.append("name = :name")
+        params["name"] = device.name
+
+    if device.map_id is not None:
+        update_fields.append("map_id = :map_id")
+        params["map_id"] = device.map_id
+
+    if device.poll_frequency is not None:
+        update_fields.append("poll_frequency = :poll_frequency")
+        params["poll_frequency"] = device.poll_frequency
+
+    if device.color is not None:
+        update_fields.append("color = :color")
+        params["color"] = device.color
+
+    if not update_fields:
+        # Если ничего не передано, просто возвращаем текущее устройство
+        result = await db.execute(
+            text("""
+                SELECT id, name, mac, map_id, poll_frequency, color, created_at, updated_at
+                FROM devices
+                WHERE id = :device_id
+            """),
+            {"device_id": device_id}
+        )
+        d = result.first()
+        return DeviceResponse(
+            id=d.id,
+            name=d.name,
+            mac=d.mac,
+            map_id=d.map_id,
+            poll_frequency=float(d.poll_frequency),
+            color=d.color,
+            created_at=d.created_at,
+            updated_at=d.updated_at
+        )
+
+    # Обновляем устройство
+    update_sql = f"""
+        UPDATE devices
+        SET {', '.join(update_fields)}
+        WHERE id = :device_id
+        RETURNING id, name, mac, map_id, poll_frequency, color, created_at, updated_at
+    """
+
+    result = await db.execute(text(update_sql), params)
     await db.commit()
     d = result.first()
 

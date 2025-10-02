@@ -50,6 +50,15 @@ CREATE TABLE IF NOT EXISTS positions (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Создание таблицы для отслеживания изменений устройств
+CREATE TABLE IF NOT EXISTS device_changes (
+    id SERIAL PRIMARY KEY,
+    device_id INTEGER REFERENCES devices(id) ON DELETE CASCADE,
+    change_type VARCHAR(50) NOT NULL, -- 'map', 'freq', 'status'
+    is_notified BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Индексы для оптимизации запросов
 CREATE INDEX IF NOT EXISTS idx_beacons_map_id ON beacons(map_id);
 CREATE INDEX IF NOT EXISTS idx_devices_mac ON devices(mac);
@@ -58,6 +67,8 @@ CREATE INDEX IF NOT EXISTS idx_signal_measurements_device_id ON signal_measureme
 CREATE INDEX IF NOT EXISTS idx_signal_measurements_measured_at ON signal_measurements(measured_at);
 CREATE INDEX IF NOT EXISTS idx_positions_device_id ON positions(device_id);
 CREATE INDEX IF NOT EXISTS idx_positions_created_at ON positions(created_at);
+CREATE INDEX IF NOT EXISTS idx_device_changes_device_id ON device_changes(device_id);
+CREATE INDEX IF NOT EXISTS idx_device_changes_is_notified ON device_changes(is_notified);
 
 -- Функция для автоматического обновления updated_at
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -74,6 +85,39 @@ CREATE TRIGGER update_maps_updated_at BEFORE UPDATE ON maps
 
 CREATE TRIGGER update_devices_updated_at BEFORE UPDATE ON devices
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Функция для отслеживания изменений устройств
+CREATE OR REPLACE FUNCTION track_device_changes()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Проверяем изменение карты (map_id)
+    IF (OLD.map_id IS DISTINCT FROM NEW.map_id) THEN
+        INSERT INTO device_changes (device_id, change_type, is_notified)
+        VALUES (NEW.id, 'map', false);
+    END IF;
+
+    -- Проверяем изменение частоты (poll_frequency)
+    IF (OLD.poll_frequency IS DISTINCT FROM NEW.poll_frequency) THEN
+        INSERT INTO device_changes (device_id, change_type, is_notified)
+        VALUES (NEW.id, 'freq', false);
+    END IF;
+
+    -- Для статуса (write_road) всегда false в текущей версии,
+    -- но оставим возможность для будущего
+    -- IF (OLD.some_status_field IS DISTINCT FROM NEW.some_status_field) THEN
+    --     INSERT INTO device_changes (device_id, change_type, is_notified)
+    --     VALUES (NEW.id, 'status', false);
+    -- END IF;
+
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+-- Триггер для отслеживания изменений устройств
+CREATE TRIGGER track_device_changes_trigger
+AFTER UPDATE ON devices
+FOR EACH ROW
+EXECUTE FUNCTION track_device_changes();
 
 -- Вставляем тестовые данные
 INSERT INTO maps (name) VALUES ('office_floor_1') ON CONFLICT (name) DO NOTHING;
