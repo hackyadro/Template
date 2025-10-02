@@ -1,5 +1,6 @@
 from flask import Flask, jsonify
 import state
+from beacons import BEACON_POSITIONS
 
 app = Flask(__name__)
 
@@ -22,6 +23,9 @@ def get_position():
         }
     })
 
+@app.route("/beacons", methods=["GET"])
+def get_beacons():
+    return jsonify(BEACON_POSITIONS)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=3277, debug=True)
