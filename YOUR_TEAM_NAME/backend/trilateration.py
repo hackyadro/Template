@@ -6,10 +6,27 @@ from scipy.optimize import least_squares
 
 
 class RobustTrilateration:
-    def __init__(self, environment_factor_range=(1.5, 3.0)):
+    """
+    Устойчивый класс трилатерации с адаптивным переводом RSSI->distance,
+    расчетом весов, множественными начальнымыми приближениями и встроенным
+    Kalman-фильтром (const-velocity) для сглаживания выходных координат.
+    """
+
+    def __init__(self, environment_factor_range=(1.5, 3.0), use_kalman=True):
         self.env_min, self.env_max = environment_factor_range
         self.position_history = []
+        self.use_kalman = use_kalman
 
+        # Kalman state (инициализируется при первом измерении)
+        # x_k = [x, y, vx, vy]^T
+        self.kalman_initialized = False
+        self.x_k = None      # состояние
+        self.P_k = None      # ковариация
+        # default process noise and measurement noise — можно тонко настроить
+        self.Q_base = np.diag([0.1, 0.1, 1.0, 1.0])  # процессный шум
+        self.R_base = np.diag([1.0, 1.0])            # шум измерений (будет масштабироваться)
+
+    # ---------------- RSSI -> distance ----------------
     def rssi_to_distance_adaptive(self, rssi_readings: list, anchor_positions: list = None) -> list:
         """Адаптивное преобразование RSSI в расстояние без калибровки"""
         if len(rssi_readings) < 3:
@@ -21,11 +38,9 @@ class RobustTrilateration:
                 distances.append(max(0.1, dist))
             return distances
 
-        # Используем статистику RSSI для адаптивной настройки
         rssi_median = median(rssi_readings)
         rssi_std = stdev(rssi_readings) if len(rssi_readings) > 2 else 5.0
 
-        # Адаптивный выбор параметров
         if rssi_median > -50:
             measured_power = -45
             n = self.env_min
@@ -36,7 +51,6 @@ class RobustTrilateration:
             measured_power = -65
             n = 2.0
 
-        # Корректировка на основе разброса сигналов
         if rssi_std > 10:
             n += 0.5
 
@@ -55,10 +69,11 @@ class RobustTrilateration:
 
         return distances
 
+    # ---------------- Environment analysis ----------------
     def estimate_environment_quality(self, rssi_readings: list) -> dict:
         """Оценка качества среды на основе статистики RSSI"""
         if len(rssi_readings) < 2:
-            return {"quality": "unknown", "stability": "unknown"}
+            return {"quality": "unknown", "stability": "unknown", "median_rssi": None, "range_rssi": None}
 
         rssi_median = median(rssi_readings)
         rssi_range = max(rssi_readings) - min(rssi_readings)
@@ -86,6 +101,7 @@ class RobustTrilateration:
             "range_rssi": rssi_range,
         }
 
+    # ---------------- Weights & geometry ----------------
     def calculate_adaptive_weights(self, rssi_readings: list, distances: list, anchor_positions: list) -> list:
         """Расчет весов на основе качества сигналов и геометрии"""
         weights = []
@@ -113,7 +129,7 @@ class RobustTrilateration:
         return [w / total for w in weights] if total > 0 else [1.0 / len(weights)] * len(weights)
 
     def _calculate_geometric_quality(self, index: int, anchors: list) -> float:
-        """Оценка геометрического качества антенны"""
+        """Оценка геометрического качества антенны (чтобы уменьшать вклад близких к коллинеарности)"""
         if len(anchors) < 3:
             return 1.0
 
@@ -131,8 +147,8 @@ class RobustTrilateration:
             for i in range(len(vectors)):
                 for j in range(i + 1, len(vectors)):
                     dot = vectors[i][0] * vectors[j][0] + vectors[i][1] * vectors[j][1]
-                    mag1 = math.sqrt(vectors[i][0] ** 2 + vectors[i][1] ** 2)
-                    mag2 = math.sqrt(vectors[j][0] ** 2 + vectors[j][1] ** 2)
+                    mag1 = math.hypot(vectors[i][0], vectors[i][1])
+                    mag2 = math.hypot(vectors[j][0], vectors[j][1])
                     if mag1 > 0 and mag2 > 0:
                         cos_angle = dot / (mag1 * mag2)
                         cos_angle = max(-1.0, min(1.0, cos_angle))
@@ -148,12 +164,13 @@ class RobustTrilateration:
 
         return 1.0
 
+    # ---------------- Least-squares residuals ----------------
     def weighted_residuals(self, params, anchors, distances, weights=None):
         """Взвешенная функция невязок"""
         x, y = params
         res = []
         for i, anchor in enumerate(anchors):
-            calc_dist = math.sqrt((x - anchor[0]) ** 2 + (y - anchor[1]) ** 2)
+            calc_dist = math.hypot(x - anchor[0], y - anchor[1])
             error = calc_dist - distances[i]
             if weights is not None:
                 error *= weights[i]
@@ -173,8 +190,9 @@ class RobustTrilateration:
 
         return points
 
+    # ---------------- Accuracy estimation ----------------
     def _estimate_accuracy(self, rssi_readings, env_info, optimization_cost):
-        """Оценка точности позиционирования"""
+        """Оценка точности позиционирования (эмпирическая)"""
         base_accuracy = 1.0
 
         if env_info["quality"] == "excellent":
@@ -196,10 +214,11 @@ class RobustTrilateration:
         elif optimization_cost > 1.0:
             base_accuracy *= 1.5
 
-        return max(0.5, min(10.0, base_accuracy))
+        return max(0.5, min(50.0, base_accuracy))
 
+    # ---------------- Simple med-based smoothing (kept for fallback) ----------------
     def apply_smoothing(self, new_position, smoothing_factor=0.3):
-        """Применяет сглаживание к позиции на основе истории"""
+        """Экспоненциальное сглаживание по истории (fallback, если Kalman отключён)"""
         if not self.position_history:
             self.position_history.append(new_position)
             return new_position
@@ -211,19 +230,100 @@ class RobustTrilateration:
         smoothed_position = (smoothed_x, smoothed_y)
         self.position_history.append(smoothed_position)
 
-        if len(self.position_history) > 10:
+        if len(self.position_history) > 20:
             self.position_history.pop(0)
 
         return smoothed_position
 
-    def trilaterate_improved(self, anchor_positions: list, rssi_readings: list) -> dict:
-        """Улучшенная трилатерация"""
+    # ---------------- Kalman filter methods ----------------
+    def _kalman_init(self, measured_pos, measured_variance):
+        """Инициализация Kalman состояния при первом измерении.
+        measured_pos: (x, y)
+        measured_variance: variance (sigma^2) for each coordinate (scalar or tuple)
+        """
+        x, y = measured_pos
+        # начальная скорость = 0
+        self.x_k = np.array([x, y, 0.0, 0.0], dtype=float)
+
+        # начальная ковариация: позиция ~ measured_variance, скорость — побольше
+        if np.isscalar(measured_variance):
+            pos_var = float(measured_variance)
+        else:
+            pos_var = float(measured_variance[0])
+
+        self.P_k = np.diag([pos_var, pos_var, 5.0, 5.0])
+        self.kalman_initialized = True
+
+    def _kalman_predict(self, dt):
+        """Предсказание состояния вперед на dt секунд"""
+        # State transition for constant velocity
+        F = np.array([
+            [1, 0, dt, 0],
+            [0, 1, 0, dt],
+            [0, 0, 1, 0],
+            [0, 0, 0, 1],
+        ], dtype=float)
+
+        # Процессный шум Q (зависит от dt)
+        q_pos = 0.1 * max(1.0, dt)
+        q_vel = 1.0 * max(1.0, dt)
+        Q = np.diag([q_pos, q_pos, q_vel, q_vel])
+
+        self.x_k = F.dot(self.x_k)
+        self.P_k = F.dot(self.P_k).dot(F.T) + Q
+
+    def _kalman_update(self, meas_pos, meas_R):
+        """Обновление Kalman фильтра измерением позиции meas_pos и ковариацией meas_R"""
+        # measurement matrix
+        H = np.array([[1, 0, 0, 0],
+                      [0, 1, 0, 0]], dtype=float)
+
+        z = np.array([meas_pos[0], meas_pos[1]], dtype=float)
+        R = np.array(meas_R, dtype=float)  # 2x2
+
+        S = H.dot(self.P_k).dot(H.T) + R
+        K = self.P_k.dot(H.T).dot(np.linalg.inv(S))
+        y = z - H.dot(self.x_k)  # innovation
+
+        self.x_k = self.x_k + K.dot(y)
+        I = np.eye(self.P_k.shape[0])
+        self.P_k = (I - K.dot(H)).dot(self.P_k)
+
+    def _apply_kalman(self, measured_pos, meas_variance, dt=1.0):
+        """Высокоуровневая wrapper-функция Kalman: предсказание (dt) и update"""
+        if not self.kalman_initialized:
+            self._kalman_init(measured_pos, meas_variance)
+
+        # predict
+        self._kalman_predict(dt)
+
+        # масштабируем R по измеренной дисперсии
+        if np.isscalar(meas_variance):
+            R = np.diag([meas_variance, meas_variance])
+        else:
+            R = np.diag([meas_variance[0], meas_variance[1]])
+
+        # update
+        self._kalman_update(measured_pos, R)
+
+        return float(self.x_k[0]), float(self.x_k[1])
+
+    # ---------------- Main trilateration ----------------
+    def trilaterate_improved(self, anchor_positions: list, rssi_readings: list, dt=1.0) -> dict:
+        """Улучшенная трилатерация. Возвращает результат и применяет Kalman (если включён)."""
         if len(anchor_positions) < 3:
             raise ValueError("Need at least 3 anchor points")
 
+        # Перевод RSSI в расстояния
         distances = self.rssi_to_distance_adaptive(rssi_readings, anchor_positions)
+
+        # Оценка качества среды
         env_info = self.estimate_environment_quality(rssi_readings)
+
+        # Адаптивные веса
         weights = self.calculate_adaptive_weights(rssi_readings, distances, anchor_positions)
+
+        # Множественные начальные точки
         initial_points = self._generate_initial_points(anchor_positions, weights)
 
         best_solution = None
@@ -236,7 +336,7 @@ class RobustTrilateration:
                     initial_guess,
                     args=(anchor_positions, distances, weights),
                     method="lm",
-                    max_nfev=50,
+                    max_nfev=200,
                     ftol=1e-6,
                 )
 
@@ -247,19 +347,41 @@ class RobustTrilateration:
                 continue
 
         if best_solution is None:
-            x = np.mean([p[0] for p in anchor_positions])
-            y = np.mean([p[1] for p in anchor_positions])
+            # fallback: центроид антенн
+            x = float(np.mean([p[0] for p in anchor_positions]))
+            y = float(np.mean([p[1] for p in anchor_positions]))
             converged = False
         else:
-            x, y = best_solution.x
-            converged = best_solution.success
+            x, y = float(best_solution.x[0]), float(best_solution.x[1])
+            converged = bool(best_solution.success)
 
+        # Оценка точности (эмпирическая)
         accuracy_estimate = self._estimate_accuracy(rssi_readings, env_info, best_cost)
-        smoothed_pos = self.apply_smoothing((x, y))
+
+        # Применим сглаживание истории (быстрый fallback)
+        smoothed_pos = self.apply_smoothing((x, y), smoothing_factor=0.35)
+
+        final_x, final_y = smoothed_pos
+
+        # Применяем Kalman поверх (если включён)
+        if self.use_kalman:
+            # используем accuracy_estimate как sigma (variance = sigma^2)
+            meas_variance = max(0.1, (accuracy_estimate ** 2))
+            try:
+                kx, ky = self._apply_kalman(smoothed_pos, meas_variance, dt=dt)
+                final_x, final_y = kx, ky
+            except Exception:
+                # на случай некорректной инверсии и т.п. — fallback на smoothed_pos
+                final_x, final_y = smoothed_pos
+
+        # Сохраняем в историю
+        self.position_history.append((final_x, final_y))
+        if len(self.position_history) > 50:
+            self.position_history.pop(0)
 
         return {
-            "x": smoothed_pos[0],
-            "y": smoothed_pos[1],
+            "x": final_x,
+            "y": final_y,
             "raw_x": x,
             "raw_y": y,
             "estimated_distances": distances,
