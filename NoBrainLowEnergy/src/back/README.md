@@ -66,17 +66,22 @@ API_PORT=8000
 DEBUG=True
 
 # MQTT Broker Configuration
-MQTT_BROKER_HOST=localhost
-MQTT_BROKER_PORT=8883
+MQTT_BROKER_HOST=mosquitto
+MQTT_BROKER_PORT=1883
 MQTT_USERNAME=your_mqtt_username
 MQTT_PASSWORD=your_mqtt_password
+MQTT_CLIENT_ID=fastapi_backend
 
 # TLS Configuration
-MQTT_USE_TLS=True
+MQTT_USE_TLS=False
 MQTT_CA_CERT_PATH=certs/ca.crt
 MQTT_CERT_FILE_PATH=certs/client.crt
 MQTT_KEY_FILE_PATH=certs/client.key
 ```
+
+> **Note:**  
+> - When running with Docker Compose, the MQTT broker host should be `mosquitto` and port `1883` (no TLS by default).
+> - If you enable TLS, set `MQTT_USE_TLS=True` and adjust the port and certificate paths as needed.
 
 ### MQTT Broker Setup
 
@@ -101,11 +106,13 @@ MQTT_KEY_FILE_PATH=certs/client.key
 
 3. **Test the connection:**
    ```bash
-   # Subscribe to test topic
-   mosquitto_sub -h localhost -p 8883 --cafile certs/ca.crt --cert certs/client.crt --key certs/client.key -t "test/topic"
-   
-   # Publish test message
-   mosquitto_pub -h localhost -p 8883 --cafile certs/ca.crt --cert certs/client.crt --key certs/client.key -t "test/topic" -m "Hello MQTT!"
+   # Subscribe to test topic (no TLS)
+   mosquitto_sub -h mosquitto -p 1883 -t "test/topic"
+
+   # Publish test message (no TLS)
+   mosquitto_pub -h mosquitto -p 1883 -t "test/topic" -m "Hello MQTT!"
+
+   # If using TLS, add --cafile, --cert, and --key options and use the correct port
    ```
 
 ## API Endpoints
@@ -185,6 +192,8 @@ MQTT_KEY_FILE_PATH=certs/client.key
    docker-compose up -d
    ```
 
+   This will start the FastAPI backend and Mosquitto MQTT broker with the correct networking for service discovery.
+
 2. **View logs:**
    ```bash
    docker-compose logs -f
@@ -198,7 +207,7 @@ MQTT_KEY_FILE_PATH=certs/client.key
 ### Services Included
 
 - **FastAPI Backend**: Main API server
-- **Mosquitto MQTT**: MQTT broker with TLS
+- **Mosquitto MQTT**: MQTT broker (default port 1883, no TLS)
 - **Redis**: Caching and session storage (optional)
 - **PostgreSQL**: Database for persistent storage (optional)
 
@@ -281,8 +290,10 @@ Logs are configured with structured logging:
 ### Common Issues
 
 1. **MQTT Connection Failed**
-   - Check broker is running: `netstat -an | grep 8883`
-   - Verify certificates: `openssl verify -CAfile certs/ca.crt certs/client.crt`
+   - Make sure the broker host and port match your environment (`mosquitto:1883` for Docker Compose).
+   - If using TLS, ensure `MQTT_USE_TLS=True` and the correct port/certificates.
+   - Check broker is running: `docker-compose ps` or `netstat -an | grep 1883`
+   - Verify certificates if using TLS: `openssl verify -CAfile certs/ca.crt certs/client.crt`
    - Check firewall settings
 
 2. **Certificate Errors**

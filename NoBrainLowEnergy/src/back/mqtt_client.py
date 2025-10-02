@@ -295,6 +295,7 @@ class MQTTClient:
                         logger.error(f"Error in message callback: {e}")
             
             logger.debug(f"Received message on topic: {msg.topic}")
+            print(f"Received message on topic: {msg.topic}")
             
         except json.JSONDecodeError:
             logger.error(f"Failed to decode JSON payload from topic: {msg.topic}")
