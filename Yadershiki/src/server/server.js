@@ -33,52 +33,51 @@ const mqttClient = mqtt.connect(`mqtt://${mqttHost}:${mqttPort}`, {
     connectTimeout: 10000
 });
 
+const mqttTopics = ['skynet/#', 'beacons/rssi'];
+
 mqttClient.on('connect', () => {
-    console.log('Подключились к MQTT');
+    console.log('Connected to MQTT');
     
-    // Подписываемся на все топики skynet
-    mqttClient.subscribe('skynet/#', (err) => {
-        if (err) {
-            console.log('Ошибка подписки:', err);
-        } else {
-            console.log('Подписались на skynet/#');
-        }
+    mqttTopics.forEach((topic) => {
+        mqttClient.subscribe(topic, (err) => {
+            if (err) {
+                console.log(`Could not subscribe ${topic}`);
+            } else {
+                console.log(`Subscribed on ${topic}`);
+            }
+        })
     });
 });
 
-// Убедитесь что этот обработчик есть и работает:
 mqttClient.on('message', (topic, message) => {
-    console.log(`MQTT ПОЛУЧЕНО: [${topic}]`, message.toString());
+    console.log(`MQTT recieved: [${topic}]`, message.toString());
     
     try {
         const data = JSON.parse(message.toString());
-        console.log('Данные из MQTT:', data);
+        console.log('Got data:', data);
         
-        // ВАЖНО: обновляем state данными из MQTT
-        state = data.data || data; // берем либо data.data, либо весь объект
-        console.log('State обновлен:', state);
+        state = data.data || data;
+        console.log('Updated state:', state);
         
-        // Уведомляем SSE клиентов
         notifyClients();
-        console.log('Клиенты уведомлены');
+        console.log('Clients notified');
         
     } catch (e) {
-        console.log('Ошибка парсинга:', e.message);
-        // Если ошибка парсинга, сохраняем как текст
+        console.log('Parsing error:', e.message);
         state = [{ error: 'parse_error', message: message.toString() }];
         notifyClients();
     }
 });
 
 mqttClient.on('error', (err) => {
-    console.log('MQTT ошибка:', err.message);
+    console.log('MQTT error:', err.message);
 });
 
 app.get('/', (req, res) => {
 	res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-app.get('/beacons', (req, res) => {
+app.get('/api/position', (req, res) => {
     const headers = {
         'Content-Type': 'text/event-stream',
         'Access-Control-Allow-Origin': '*',
@@ -97,7 +96,6 @@ app.get('/beacons', (req, res) => {
 
     console.log(`${clientId} - Connection opened. Total clients: ${clients.length}`);
 
-    // Отправляем текущее состояние сразу при подключении
     const initialData = `data: ${JSON.stringify(state)}\n\n`;
     res.write(initialData);
     res.flush();
@@ -114,7 +112,7 @@ app.get('/beacons', (req, res) => {
 });
 
 function genUniqueId(){
-	return Date.now() + '-' + Math.floor(Math.random() * 1000000000);
+	return Date.now() + '-' + Math.floor(Math.random() * 1_000_000_000);
 }
 
 function notifyClients() {
@@ -126,20 +124,18 @@ function notifyClients() {
             client.res.write(sendData);
             client.res.flush();
         } catch (err) {
-            console.log(`❌ Ошибка отправки клиенту ${client.id}:`, err.message);
+            console.log(`Error sendig to ${client.id}:`, err.message);
             disconnectedClients.push(index);
         }
     });
 
-    // Удаляем отключившихся клиентов
     if (disconnectedClients.length > 0) {
         clients = clients.filter((_, index) => !disconnectedClients.includes(index));
-        console.log(`🗑️ Удалено ${disconnectedClients.length} отключившихся клиентов`);
+        console.log(`Disconnected ${disconnectedClients.length} clients`);
     }
 }
 
 
-// Получить текущее состояние (разово)
 app.get('/api/state', (req, res) => {
     res.json({
         state: state,
@@ -148,16 +144,14 @@ app.get('/api/state', (req, res) => {
     });
 });
 
-// Получить последние MQTT сообщения
 app.get('/api/messages', (req, res) => {
     res.json({
         state: state,
-        message: 'Это текущее состояние из MQTT',
+        message: 'Current MQTT state',
         timestamp: new Date().toISOString()
     });
 });
 
-// Получить статус сервера
 app.get('/api/status', (req, res) => {
     res.json({
         service: 'Main Server',
@@ -168,7 +162,6 @@ app.get('/api/status', (req, res) => {
     });
 });
 
-// Получить информацию о MQTT
 app.get('/api/mqtt-info', (req, res) => {
     res.json({
         connected: mqttClient ? mqttClient.connected : false,
@@ -177,13 +170,11 @@ app.get('/api/mqtt-info', (req, res) => {
     });
 });
 
-// Тестовый endpoint для проверки работы
 app.post('/api/test-mqtt', (req, res) => {
     const testData = req.body;
     
     console.log('Тестовые данные:', testData);
     
-    // Принудительно обновляем state
     state = testData;
     notifyClients();
     
@@ -197,7 +188,6 @@ app.post('/api/test-mqtt', (req, res) => {
 app.post('/api/simulate-mqtt', (req, res) => {
     const testData = req.body;
     
-    // Имитируем получение MQTT сообщения
     const mockMessage = JSON.stringify(testData);
     mqttClient.emit('message', 'skynet/test', mockMessage);
     
@@ -208,7 +198,6 @@ app.post('/api/simulate-mqtt', (req, res) => {
     });
 });
 
-// Простой ping
 app.get('/api/ping', (req, res) => {
     res.json({ status: 'ok', time: new Date().toISOString() });
 });

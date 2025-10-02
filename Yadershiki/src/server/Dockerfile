@@ -1,20 +1,17 @@
-# образ node.js
 FROM node:18-alpine
 
-# рабочая директория
 WORKDIR /app
 
-# Копируем package.json и package-lock.json для установки зависимостей
+# Копируем package.json отдельно для кэширования
 COPY package*.json ./
+RUN npm install
 
-# Устанавливаем зависимости
-RUN npm install --production
-
-# копируем весь исходный код в контейнер
+# Копируем исходный код
 COPY . .
 
-# Порт где будет сервер
-EXPOSE 8080
+# Устанавливаем переменные окружения для логирования
+ENV NODE_ENV=production
+ENV LOG_LEVEL=info
 
-# запуск сервера
-CMD ["node", "server.js"]
+# Используем stdout/stderr для логов (Docker best practice)
+CMD ["node", "--enable-source-maps", "server.js"]
