@@ -1,4 +1,10 @@
-import bluetooth, time, network, micropython, machine, socket, ubinascii
+import bluetooth
+import time
+import network
+import micropython
+import machine
+import socket
+import ubinascii
 from umqtt.simple import MQTTClient
 
 # ---------- CONFIG ----------
