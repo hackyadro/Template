@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -12,6 +10,7 @@ services:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./backend/migrations:/docker-entrypoint-initdb.d  # миграций при первом запуске
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U indoor_user -d indoor_navigation"]
       interval: 5s
@@ -19,7 +18,9 @@ services:
       retries: 5
     networks:
       - indoor_network
+    restart: unless-stopped
 
+  # Python FastAPI Backend
   backend:
     build:
       context: ./backend
@@ -38,20 +39,16 @@ services:
     networks:
       - indoor_network
     restart: unless-stopped
-
-  frontend:
-    build:
-      context: ./client-indoor-locator
-      dockerfile: Dockerfile
-    container_name: indoor_navigation_frontend
-    ports:
-      - "3000:80"
-    networks:
-      - indoor_network
-    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
 volumes:
   postgres_data:
+    driver: local
 
 networks:
   indoor_network:
