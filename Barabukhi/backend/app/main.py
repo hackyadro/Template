@@ -2,17 +2,24 @@ from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
+from typing import List
 
 from app.database import get_db
 from app.models import (
+    # Client API models
     MacRequest, FreqResponse, StatusRoadResponse, MapResponse,
-    PingResponse, SendSignalRequest, SendSignalResponse
+    PingResponse, SendSignalRequest, SendSignalResponse,
+    # Frontend API models
+    MapCreateRequest, MapResponse2, BeaconResponse,
+    DeviceCreateRequest, DeviceResponse,
+    PositionRequest, PositionResponse, PathPoint, DevicePathResponse
 )
+from app.positioning import PositioningEngine, BeaconData
 
 app = FastAPI(
     title="Indoor Navigation API",
     description="REST API для indoor-навигации на основе BLE маяков",
-    version="1.0.0"
+    version="2.0.0"
 )
 
 # CORS middleware для доступа с фронтенда
@@ -29,14 +36,11 @@ app.add_middleware(
 async def root():
     return {
         "message": "Indoor Navigation API",
-        "version": "1.0.0",
-        "endpoints": [
-            "/get_freq",
-            "/get_status_road",
-            "/get_map",
-            "/ping",
-            "/send_signal"
-        ]
+        "version": "2.0.0",
+        "endpoints": {
+            "php_api": ["/get_freq", "/get_status_road", "/get_map", "/ping", "/send_signal"],
+            "frontend_api": ["/api/maps", "/api/devices", "/api/position", "/api/path"]
+        }
     }
 
 
@@ -50,209 +54,445 @@ async def health_check(db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=503, detail=f"Database connection failed: {str(e)}")
 
 
-# ==================== CLIENT API ====================
+# ==================== PHP CLIENT API (совместимость) ====================
 
 @app.post("/get_freq", response_model=FreqResponse)
 async def get_freq(request: MacRequest, db: AsyncSession = Depends(get_db)):
-    """
-    Получить частоту для MAC адреса.
-    """
-    # Получаем данные клиента из БД по MAC адресу
+    """Получить частоту для MAC адреса (из таблицы devices)"""
     result = await db.execute(
-        text("SELECT freq FROM clients WHERE mac = :mac"),
+        text("SELECT poll_frequency FROM devices WHERE mac = :mac"),
         {"mac": request.mac}
     )
-    client = result.first()
+    device = result.first()
 
-    if not client:
-        # Если клиент не найден, создаём его с дефолтными значениями
-        await db.execute(
-            text("""
-                INSERT INTO clients (mac, freq, write_road, map_name)
-                VALUES (:mac, 1, true, 'office_floor_1')
-            """),
-            {"mac": request.mac}
-        )
-        await db.commit()
+    if not device:
+        # Возвращаем дефолтную частоту
         return FreqResponse(freq=1)
 
-    return FreqResponse(freq=client.freq)
+    # Конвертируем poll_frequency (Гц) в целое число
+    return FreqResponse(freq=int(float(device.poll_frequency)))
 
 
 @app.post("/get_status_road", response_model=StatusRoadResponse)
-async def get_status_road(request: MacRequest, db: AsyncSession = Depends(get_db)):
-    """
-    Получить статус записи маршрута для MAC адреса.
-    """
-    # Получаем данные клиента из БД по MAC адресу
-    result = await db.execute(
-        text("SELECT write_road FROM clients WHERE mac = :mac"),
-        {"mac": request.mac}
-    )
-    client = result.first()
-
-    if not client:
-        # Если клиент не найден, создаём его с дефолтными значениями
-        await db.execute(
-            text("""
-                INSERT INTO clients (mac, freq, write_road, map_name)
-                VALUES (:mac, 1, true, 'office_floor_1')
-            """),
-            {"mac": request.mac}
-        )
-        await db.commit()
-        return StatusRoadResponse(write_road=True)
-
-    return StatusRoadResponse(write_road=client.write_road)
+async def get_status_road(_request: MacRequest, _db: AsyncSession = Depends(get_db)):
+    """Получить статус записи маршрута (всегда True для фронтенда)"""
+    # Фронтенд всегда сохраняет позиции
+    return StatusRoadResponse(write_road=True)
 
 
 @app.post("/get_map", response_model=MapResponse)
 async def get_map(request: MacRequest, db: AsyncSession = Depends(get_db)):
-    """
-    Получить данные карты и список маяков для MAC адреса.
-    """
-    # Получаем данные клиента из БД по MAC адресу
+    """Получить данные карты и список маяков для MAC адреса"""
+    # Получаем устройство по MAC
     result = await db.execute(
-        text("SELECT id, map_name FROM clients WHERE mac = :mac"),
+        text("SELECT map_id FROM devices WHERE mac = :mac"),
         {"mac": request.mac}
     )
-    client = result.first()
+    device = result.first()
 
-    if not client:
-        # Если клиент не найден, создаём его с дефолтными значениями
-        await db.execute(
-            text("""
-                INSERT INTO clients (mac, freq, write_road, map_name)
-                VALUES (:mac, 1, true, 'office_floor_1')
-            """),
-            {"mac": request.mac}
+    if not device or not device.map_id:
+        # Возвращаем дефолтную карту
+        map_result = await db.execute(
+            text("SELECT id, name FROM maps WHERE name = 'office_floor_1' LIMIT 1")
         )
-        await db.commit()
+        map_data = map_result.first()
+        if not map_data:
+            raise HTTPException(status_code=404, detail="Default map not found")
 
-        # Получаем все маяки
-        beacons_result = await db.execute(text("SELECT name FROM beacons ORDER BY id"))
-        beacons = [row.name for row in beacons_result.fetchall()]
+        map_id = map_data.id
+        map_name = map_data.name
+    else:
+        map_id = device.map_id
+        map_result = await db.execute(
+            text("SELECT name FROM maps WHERE id = :map_id"),
+            {"map_id": map_id}
+        )
+        map_data = map_result.first()
+        map_name = map_data.name if map_data else "unknown"
 
-        return MapResponse(map_name='office_floor_1', beacons=beacons)
-
-    # Получаем маяки для клиента (если назначены конкретные)
+    # Получаем список маяков для карты
     beacons_result = await db.execute(
-        text("""
-            SELECT b.name
-            FROM beacons b
-            JOIN client_beacons cb ON b.id = cb.beacon_id
-            WHERE cb.client_id = :client_id
-            ORDER BY b.id
-        """),
-        {"client_id": client.id}
+        text("SELECT name FROM beacons WHERE map_id = :map_id ORDER BY id"),
+        {"map_id": map_id}
     )
     beacons = [row.name for row in beacons_result.fetchall()]
 
-    # Если у клиента нет назначенных маяков, возвращаем все
-    if not beacons:
-        beacons_result = await db.execute(text("SELECT name FROM beacons ORDER BY id"))
-        beacons = [row.name for row in beacons_result.fetchall()]
-
-    return MapResponse(map_name=client.map_name, beacons=beacons)
+    return MapResponse(map_name=map_name, beacons=beacons)
 
 
 @app.post("/ping", response_model=PingResponse)
-async def ping(request: MacRequest, db: AsyncSession = Depends(get_db)):
-    """
-    Проверить наличие изменений для клиента.
-    """
-    # Получаем клиента
-    result = await db.execute(
-        text("SELECT id FROM clients WHERE mac = :mac"),
-        {"mac": request.mac}
-    )
-    client = result.first()
-
-    if not client:
-        # Если клиент не найден, создаём его
-        await db.execute(
-            text("""
-                INSERT INTO clients (mac, freq, write_road, map_name)
-                VALUES (:mac, 1, true, 'office_floor_1')
-            """),
-            {"mac": request.mac}
-        )
-        await db.commit()
-        return PingResponse(change=False, change_list=[])
-
-    # Проверяем наличие необработанных изменений
-    changes_result = await db.execute(
-        text("""
-            SELECT change_type
-            FROM client_changes
-            WHERE client_id = :client_id AND is_processed = false
-        """),
-        {"client_id": client.id}
-    )
-    changes = changes_result.fetchall()
-
-    if not changes:
-        return PingResponse(change=False, change_list=[])
-
-    # Формируем список изменений
-    change_list = [row.change_type for row in changes]
-
-    # Помечаем изменения как обработанные
-    await db.execute(
-        text("""
-            UPDATE client_changes
-            SET is_processed = true
-            WHERE client_id = :client_id AND is_processed = false
-        """),
-        {"client_id": client.id}
-    )
-    await db.commit()
-
-    return PingResponse(change=True, change_list=change_list)
+async def ping(_request: MacRequest, _db: AsyncSession = Depends(get_db)):
+    """Проверить наличие изменений для клиента (пока заглушка)"""
+    # TODO: Реализовать логику отслеживания изменений
+    return PingResponse(change=False, change_list=[])
 
 
 @app.post("/send_signal", response_model=SendSignalResponse)
 async def send_signal(request: SendSignalRequest, db: AsyncSession = Depends(get_db)):
     """
-    Принять данные о сигналах от маяков.
+    Принять данные о сигналах от маяков и вычислить позицию
     """
-    # Получаем или создаём клиента
+    # Получаем или создаём устройство
     result = await db.execute(
-        text("SELECT id FROM clients WHERE mac = :mac"),
+        text("SELECT id, map_id FROM devices WHERE mac = :mac"),
         {"mac": request.mac}
     )
-    client = result.first()
+    device = result.first()
 
-    if not client:
-        # Создаём нового клиента
-        result = await db.execute(
+    if not device:
+        # Создаём устройство если не существует
+        map_result = await db.execute(
+            text("SELECT id FROM maps WHERE name = :map_name"),
+            {"map_name": request.map_name}
+        )
+        map_data = map_result.first()
+
+        if not map_data:
+            # Создаём карту если не существует
+            map_insert = await db.execute(
+                text("INSERT INTO maps (name) VALUES (:map_name) RETURNING id"),
+                {"map_name": request.map_name}
+            )
+            map_id = map_insert.scalar()
+        else:
+            map_id = map_data.id
+
+        device_insert = await db.execute(
             text("""
-                INSERT INTO clients (mac, freq, write_road, map_name)
-                VALUES (:mac, 1, true, :map_name)
+                INSERT INTO devices (name, mac, map_id)
+                VALUES (:name, :mac, :map_id)
                 RETURNING id
             """),
-            {"mac": request.mac, "map_name": request.map_name}
+            {"name": f"Device_{request.mac}", "mac": request.mac, "map_id": map_id}
         )
+        device_id = device_insert.scalar()
         await db.commit()
-        client_id = result.scalar()
     else:
-        client_id = client.id
+        device_id = device.id
+        map_id = device.map_id
 
     # Сохраняем измерения сигналов
-    for signal_data in request.list:
+    for signal in request.list:
         await db.execute(
             text("""
-                INSERT INTO signal_measurements (client_id, beacon_name, signal_strength, map_name)
-                VALUES (:client_id, :beacon_name, :signal_strength, :map_name)
+                INSERT INTO signal_measurements (device_id, beacon_name, signal_strength)
+                VALUES (:device_id, :beacon_name, :signal_strength)
             """),
             {
-                "client_id": client_id,
-                "beacon_name": signal_data.name,
-                "signal_strength": signal_data.signal,
-                "map_name": request.map_name
+                "device_id": device_id,
+                "beacon_name": signal.name,
+                "signal_strength": signal.signal
+            }
+        )
+
+    # Получаем маяки для вычисления позиции
+    beacons_result = await db.execute(
+        text("""
+            SELECT name, x_coordinate, y_coordinate
+            FROM beacons
+            WHERE map_id = :map_id
+        """),
+        {"map_id": map_id}
+    )
+    beacons_data = beacons_result.fetchall()
+    beacons_map = {
+        row.name: BeaconData(row.name, float(row.x_coordinate), float(row.y_coordinate))
+        for row in beacons_data
+    }
+
+    # Вычисляем позицию
+    signals = [(signal.name, signal.signal) for signal in request.list]
+    position_data = PositioningEngine.calculate_position(signals, beacons_map)
+
+    if position_data:
+        x, y, accuracy, algorithm = position_data
+
+        # Всегда сохраняем вычисленную позицию (для фронтенда)
+        await db.execute(
+            text("""
+                INSERT INTO positions (device_id, map_id, x_coordinate, y_coordinate, accuracy, algorithm)
+                VALUES (:device_id, :map_id, :x, :y, :accuracy, :algorithm)
+            """),
+            {
+                "device_id": device_id,
+                "map_id": map_id,
+                "x": x,
+                "y": y,
+                "accuracy": accuracy,
+                "algorithm": algorithm
             }
         )
 
     await db.commit()
-
     return SendSignalResponse(accept=True)
+
+
+# ==================== FRONTEND API ====================
+
+@app.get("/api/maps", response_model=List[MapResponse2])
+async def get_maps(db: AsyncSession = Depends(get_db)):
+    """Получить список всех карт с маяками"""
+    result = await db.execute(text("SELECT id, name, created_at FROM maps ORDER BY created_at DESC"))
+    maps = result.fetchall()
+
+    maps_response = []
+    for map_row in maps:
+        # Получаем маяки для каждой карты
+        beacons_result = await db.execute(
+            text("""
+                SELECT id, map_id, name, x_coordinate, y_coordinate, created_at
+                FROM beacons
+                WHERE map_id = :map_id
+                ORDER BY id
+            """),
+            {"map_id": map_row.id}
+        )
+        beacons = [
+            BeaconResponse(
+                id=b.id,
+                map_id=b.map_id,
+                name=b.name,
+                x_coordinate=float(b.x_coordinate),
+                y_coordinate=float(b.y_coordinate),
+                created_at=b.created_at
+            )
+            for b in beacons_result.fetchall()
+        ]
+
+        maps_response.append(
+            MapResponse2(
+                id=map_row.id,
+                name=map_row.name,
+                created_at=map_row.created_at,
+                beacons=beacons
+            )
+        )
+
+    return maps_response
+
+
+@app.post("/api/maps", response_model=MapResponse2, status_code=201)
+async def create_map(map_data: MapCreateRequest, db: AsyncSession = Depends(get_db)):
+    """Создать новую карту с маяками"""
+    # Создаём карту
+    result = await db.execute(
+        text("INSERT INTO maps (name) VALUES (:name) RETURNING id, name, created_at"),
+        {"name": map_data.name}
+    )
+    map_row = result.first()
+    map_id = map_row.id
+
+    # Создаём маяки
+    beacons = []
+    for beacon in map_data.beacons:
+        beacon_result = await db.execute(
+            text("""
+                INSERT INTO beacons (map_id, name, x_coordinate, y_coordinate)
+                VALUES (:map_id, :name, :x, :y)
+                RETURNING id, map_id, name, x_coordinate, y_coordinate, created_at
+            """),
+            {
+                "map_id": map_id,
+                "name": beacon.name,
+                "x": beacon.x,
+                "y": beacon.y
+            }
+        )
+        b = beacon_result.first()
+        beacons.append(
+            BeaconResponse(
+                id=b.id,
+                map_id=b.map_id,
+                name=b.name,
+                x_coordinate=float(b.x_coordinate),
+                y_coordinate=float(b.y_coordinate),
+                created_at=b.created_at
+            )
+        )
+
+    await db.commit()
+
+    return MapResponse2(
+        id=map_row.id,
+        name=map_row.name,
+        created_at=map_row.created_at,
+        beacons=beacons
+    )
+
+
+@app.delete("/api/maps/{map_id}", status_code=204)
+async def delete_map(map_id: int, db: AsyncSession = Depends(get_db)):
+    """Удалить карту"""
+    result = await db.execute(
+        text("DELETE FROM maps WHERE id = :map_id RETURNING id"),
+        {"map_id": map_id}
+    )
+    await db.commit()
+    if not result.first():
+        raise HTTPException(status_code=404, detail="Map not found")
+
+
+@app.get("/api/devices", response_model=List[DeviceResponse])
+async def get_devices(db: AsyncSession = Depends(get_db)):
+    """Получить список всех устройств"""
+    result = await db.execute(
+        text("""
+            SELECT id, name, mac, map_id, poll_frequency, color, created_at, updated_at
+            FROM devices
+            ORDER BY created_at DESC
+        """)
+    )
+    devices = result.fetchall()
+
+    return [
+        DeviceResponse(
+            id=d.id,
+            name=d.name,
+            mac=d.mac,
+            map_id=d.map_id,
+            poll_frequency=float(d.poll_frequency),
+            color=d.color,
+            created_at=d.created_at,
+            updated_at=d.updated_at
+        )
+        for d in devices
+    ]
+
+
+@app.post("/api/devices", response_model=DeviceResponse, status_code=201)
+async def create_device(device: DeviceCreateRequest, db: AsyncSession = Depends(get_db)):
+    """Создать новое устройство"""
+    result = await db.execute(
+        text("""
+            INSERT INTO devices (name, mac, map_id, poll_frequency, color)
+            VALUES (:name, :mac, :map_id, :poll_frequency, :color)
+            RETURNING id, name, mac, map_id, poll_frequency, color, created_at, updated_at
+        """),
+        {
+            "name": device.name,
+            "mac": device.mac,
+            "map_id": device.map_id,
+            "poll_frequency": device.poll_frequency,
+            "color": device.color
+        }
+    )
+    await db.commit()
+    d = result.first()
+
+    return DeviceResponse(
+        id=d.id,
+        name=d.name,
+        mac=d.mac,
+        map_id=d.map_id,
+        poll_frequency=float(d.poll_frequency),
+        color=d.color,
+        created_at=d.created_at,
+        updated_at=d.updated_at
+    )
+
+
+@app.delete("/api/devices/{device_id}", status_code=204)
+async def delete_device(device_id: int, db: AsyncSession = Depends(get_db)):
+    """Удалить устройство"""
+    result = await db.execute(
+        text("DELETE FROM devices WHERE id = :device_id RETURNING id"),
+        {"device_id": device_id}
+    )
+    await db.commit()
+    if not result.first():
+        raise HTTPException(status_code=404, detail="Device not found")
+
+
+@app.post("/api/position", response_model=PositionResponse)
+async def get_position(request: PositionRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Получить последнюю вычисленную позицию устройства
+    Этот эндпоинт будет вызываться фронтендом для получения позиции устройства
+    """
+    # Получаем устройство
+    device_result = await db.execute(
+        text("SELECT id, map_id FROM devices WHERE mac = :mac"),
+        {"mac": request.mac}
+    )
+    device = device_result.first()
+
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    # Получаем карту
+    map_result = await db.execute(
+        text("SELECT id FROM maps WHERE name = :map_name"),
+        {"map_name": request.map_name}
+    )
+    map_data = map_result.first()
+
+    if not map_data:
+        raise HTTPException(status_code=404, detail="Map not found")
+
+    # Получаем последнюю позицию
+    position_result = await db.execute(
+        text("""
+            SELECT x_coordinate, y_coordinate, accuracy, algorithm, created_at
+            FROM positions
+            WHERE device_id = :device_id AND map_id = :map_id
+            ORDER BY created_at DESC
+            LIMIT 1
+        """),
+        {"device_id": device.id, "map_id": map_data.id}
+    )
+    position = position_result.first()
+
+    if not position:
+        raise HTTPException(status_code=404, detail="No position data found for this device")
+
+    return PositionResponse(
+        x=float(position.x_coordinate),
+        y=float(position.y_coordinate),
+        accuracy=float(position.accuracy) if position.accuracy else None,
+        algorithm=position.algorithm,
+        timestamp=position.created_at
+    )
+
+
+@app.get("/api/path/{device_id}", response_model=DevicePathResponse)
+async def get_device_path(device_id: int, limit: int = 100, db: AsyncSession = Depends(get_db)):
+    """Получить историю пути устройства"""
+    # Получаем устройство
+    device_result = await db.execute(
+        text("SELECT id, name, mac FROM devices WHERE id = :device_id"),
+        {"device_id": device_id}
+    )
+    device = device_result.first()
+
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    # Получаем историю позиций
+    positions_result = await db.execute(
+        text("""
+            SELECT x_coordinate, y_coordinate, accuracy, created_at
+            FROM positions
+            WHERE device_id = :device_id
+            ORDER BY created_at DESC
+            LIMIT :limit
+        """),
+        {"device_id": device_id, "limit": limit}
+    )
+    positions = positions_result.fetchall()
+
+    path = [
+        PathPoint(
+            x=float(p.x_coordinate),
+            y=float(p.y_coordinate),
+            accuracy=float(p.accuracy) if p.accuracy else None,
+            timestamp=p.created_at
+        )
+        for p in positions
+    ]
+
+    return DevicePathResponse(
+        device_id=device.id,
+        device_name=device.name,
+        device_mac=device.mac,
+        path=path
+    )
