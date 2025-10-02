@@ -17,7 +17,7 @@ function addRSSIData(beaconCoordinates, rssiDataList) {
 }
 
 function sortBeaconsByRSSI(beaconCoordinates) {
-    return beaconCoordinates.sort((b, a) => {
+    return beaconCoordinates.filter((beacon) => beacon.RSSI !== undefined).sort((b, a) => {
         return a.RSSI - b.RSSI;
     });
 }
@@ -74,16 +74,16 @@ function trilaterateThreeCircles(circles) {
     const maxY = Math.max(c1.y, c2.y, c3.y) + Math.max(c1.distance, c2.distance, c3.distance);
     const minY = Math.min(c1.y, c2.y, c3.y) - Math.max(c1.distance, c2.distance, c3.distance);
     
-    if (x < minX || x > maxX || y < minY || y > maxY) {
-        console.log("The found point goes beyond reasonable limits");
-        return null;
-    }
+    // if (x < minX || x > maxX || y < minY || y > maxY) {
+    //     console.log("The found point goes beyond reasonable limits");
+    //     return null;
+    // }
     
     return { x: x, y: y };
 }
 
 
-async function trilaterate(dirname, rssiData) {
+export default async function trilaterate(dirname, rssiData) {
     const beacons = await getBeacons(dirname);
     addRSSIData(beacons, rssiData);
     const sortedBeacons = sortBeaconsByRSSI(beacons);
@@ -114,4 +114,4 @@ async function trilaterate(dirname, rssiData) {
 // }
 
 
-trilaterate(".", rssi);
+// trilaterate(".", rssi);

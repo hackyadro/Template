@@ -7,6 +7,7 @@ import cors from 'cors';
 import { fileURLToPath } from 'url';
 import mqtt from 'mqtt';
 import getBeacons from './beacons.js';
+import trilaterate from './locationcals.js';
 
 dotenv.config();
 const port = process.env.PORT;
@@ -49,14 +50,15 @@ mqttClient.on('connect', () => {
     });
 });
 
-mqttClient.on('message', (topic, message) => {
+mqttClient.on('message', async (topic, message) => {
     console.log(`MQTT recieved: [${topic}]`, message.toString());
     
     try {
         const data = JSON.parse(message.toString());
         console.log('Got data:', data);
         
-        state = data.data || data;
+        const rssi = data.data || data;
+        state = await trilaterate(__dirname, rssi);
         console.log('Updated state:', state);
         
         notifyClients();
