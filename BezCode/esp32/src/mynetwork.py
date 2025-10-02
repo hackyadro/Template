@@ -10,7 +10,6 @@ class WiFiManager:
     def connect(self) -> bool:
         self.wlan.active(True)
         if not self.wlan.isconnected():
-            print(f'Подключение к {self.ssid}...')
             self.wlan.connect(self.ssid, self.password)
             
             for i in range(20):
