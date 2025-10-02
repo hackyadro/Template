@@ -1,9 +1,10 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from typing import List
 import time
+import json
 
 from app.database import get_db
 from app.models import (
@@ -40,7 +41,8 @@ async def root():
         "version": "2.0.0",
         "endpoints": {
             "device_api": ["/get_freq", "/get_status_road", "/get_map", "/ping", "/send_signal"],
-            "frontend_api": ["/api/maps", "/api/devices", "/api/position", "/api/path"]
+            "frontend_api": ["/api/maps", "/api/devices", "/api/position", "/api/path"],
+            "websocket": "/ws"
         }
     }
 
@@ -322,6 +324,128 @@ async def send_signal(request: SendSignalRequest, db: AsyncSession = Depends(get
 
     await db.commit()
     return SendSignalResponse(accept=True)
+
+
+# ==================== WEBSOCKET API ====================
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket, db: AsyncSession = Depends(get_db)):
+    """
+    WebSocket endpoint для real-time коммуникации с фронтендом.
+
+    Формат сообщений:
+    Входящие: { "type": "get_all_device" | "get_list_map" | "write_road", "data": {...} }
+    Исходящие: { "type": "all_device" | "list_map" | "write_road", "data": {...} }
+    """
+    await websocket.accept()
+
+    try:
+        while True:
+            # Получаем сообщение от клиента
+            raw_message = await websocket.receive_text()
+
+            try:
+                message = json.loads(raw_message)
+                msg_type = message.get("type")
+
+                # Обработка запроса get_all_device
+                if msg_type == "get_all_device":
+                    devices_result = await db.execute(
+                        text("""
+                            SELECT id, name, mac, map_id, poll_frequency, write_road, color
+                            FROM devices
+                            ORDER BY created_at DESC
+                        """)
+                    )
+                    devices = devices_result.fetchall()
+
+                    devices_list = [
+                        {
+                            "id": d.id,
+                            "name": d.name,
+                            "mac": d.mac,
+                            "map_set": d.map_id,
+                            "freq": float(d.poll_frequency),
+                            "write_road": d.write_road,
+                            "color": d.color
+                        }
+                        for d in devices
+                    ]
+
+                    await websocket.send_text(json.dumps({
+                        "type": "all_device",
+                        "data": devices_list
+                    }))
+
+                # Обработка запроса get_list_map
+                elif msg_type == "get_list_map":
+                    maps_result = await db.execute(
+                        text("SELECT id, name, created_at FROM maps ORDER BY created_at DESC")
+                    )
+                    maps = maps_result.fetchall()
+
+                    maps_list = []
+                    for map_row in maps:
+                        # Получаем маяки для каждой карты
+                        beacons_result = await db.execute(
+                            text("""
+                                SELECT id, name, x_coordinate, y_coordinate
+                                FROM beacons
+                                WHERE map_id = :map_id
+                                ORDER BY id
+                            """),
+                            {"map_id": map_row.id}
+                        )
+                        beacons = [
+                            {
+                                "id": b.id,
+                                "name": b.name,
+                                "x": float(b.x_coordinate),
+                                "y": float(b.y_coordinate)
+                            }
+                            for b in beacons_result.fetchall()
+                        ]
+
+                        maps_list.append({
+                            "id": map_row.id,
+                            "name": map_row.name,
+                            "beacons": beacons
+                        })
+
+                    await websocket.send_text(json.dumps({
+                        "type": "list_map",
+                        "data": {"maps": maps_list}
+                    }))
+
+                # Обработка write_road (опционально - для будущего расширения)
+                elif msg_type == "write_road":
+                    # На данный момент просто подтверждаем получение
+                    await websocket.send_text(json.dumps({
+                        "type": "write_road",
+                        "data": {"ok": True}
+                    }))
+
+                else:
+                    # Неизвестный тип сообщения
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "data": {"message": f"Unknown message type: {msg_type}"}
+                    }))
+
+            except json.JSONDecodeError:
+                await websocket.send_text(json.dumps({
+                    "type": "error",
+                    "data": {"message": "Invalid JSON format"}
+                }))
+
+    except WebSocketDisconnect:
+        print("WebSocket client disconnected")
+    except Exception as e:
+        print(f"WebSocket error: {e}")
+        try:
+            await websocket.close()
+        except:
+            pass
 
 
 # ==================== FRONTEND API ====================
