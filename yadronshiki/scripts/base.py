@@ -140,16 +140,14 @@ def weighted_centroid(centers, weights):
     sy = sum(w * c[1] for c, w in zip(centers, weights))
     return (sx / total_w, sy / total_w)
 
-
-# --- основная функция, интегрирующая вашу логику, но исправленная и устойчивый вариант ---
 def location_by_three(c1, c2, c3, r1, r2, r3):
     """
-    Оценка позиции по трем центрам и радиусам.
-    Логика:
-      - считаем, какие пары перекрываются;
-      - если есть пересечения — используем точки пересечения (усреднение) как опорные;
-      - если пересечений мало — применяем простые эвристики (взвешенные центроиды).
-    Возвращает кортеж (x,y) или None.
+    Оценка позиции по трём центрам c1,c2,c3 и радиусам r1,r2,r3.
+    Использует простые геометрические эвристики:
+      - если есть пересечения пар кругов — берём средние точки пересечений и усредняем;
+      - если пересечений нет, но есть перекрытия пар — берём смещённые точки вдоль векторов центров;
+      - если вообще нет перекрытий — используем взвешенный по 1/r центроид.
+    Возвращает [x, y] или None.
     """
     # расстояния между центрами
     d12 = dist(c1, c2)
@@ -160,74 +158,116 @@ def location_by_three(c1, c2, c3, r1, r2, r3):
     overlap13 = d13 < (r1 + r3)
     overlap23 = d23 < (r2 + r3)
 
-    # Соберём доступные точки пересечения (midpoints of intersection pairs)
+    count = int(overlap12) + int(overlap13) + int(overlap23)
+
+    def unit_vec(a, b):
+        dx = b[0] - a[0]
+        dy = b[1] - a[1]
+        mag = hypot(dx, dy)
+        if mag == 0:
+            return (0.0, 0.0)
+        return (dx / mag, dy / mag)
+
+    def avg_point(pts):
+        if not pts:
+            return None
+        sx = sum(p[0] for p in pts)
+        sy = sum(p[1] for p in pts)
+        n = len(pts)
+        return (sx / n, sy / n)
+
+    # helper: средняя точка пересечения двух окружностей (усреднение двух пересечений)
+    def mid_of_circle_intersection(a, b, ra, rb):
+        from math import sqrt
+        x0, y0 = a
+        x1, y1 = b
+        dx = x1 - x0
+        dy = y1 - y0
+        d = hypot(dx, dy)
+        if d == 0:
+            return None
+        # проверяем наличие пересечения
+        if d > (ra + rb) or d < abs(ra - rb):
+            return None
+        # расстояние от a до линии, проходящей через точки пересечения
+        a_len = (ra * ra - rb * rb + d * d) / (2 * d)
+        h2 = max(0.0, ra * ra - a_len * a_len)
+        xm = x0 + a_len * dx / d
+        ym = y0 + a_len * dy / d
+        if h2 == 0:
+            return (xm, ym)
+        h = sqrt(h2)
+        rx = -dy * (h / d)
+        ry = dx * (h / d)
+        p1 = (xm + rx, ym + ry)
+        p2 = (xm - rx, ym - ry)
+        # возвращаем усреднённую точку пересечения
+        return ((p1[0] + p2[0]) / 2.0, (p1[1] + p2[1]) / 2.0)
+
+    # 1) если все три пары перекрываются — используем точки, смещённые от центров (по радиусу) и усреднение
+    if count == 3:
+        u12 = unit_vec(c1, c2)
+        u13 = unit_vec(c1, c3)
+        u23 = unit_vec(c2, c3)
+        c12 = (c1[0] + r1 * u12[0], c1[1] + r1 * u12[1])
+        c13 = (c1[0] + r1 * u13[0], c1[1] + r1 * u13[1])
+        c32 = (c2[0] + r2 * u23[0], c2[1] + r2 * u23[1])
+        to13 = (c13[0] - c12[0], c13[1] - c12[1])
+        to32 = (c32[0] - c12[0], c32[1] - c12[1])
+        centrevec = (2.0 / 3.0 * (to13[0] + to32[0]), 2.0 / 3.0 * (to13[1] + to32[1]))
+        return [round(centrevec[0] + c12[0], 6), round(centrevec[1] + c12[1], 6)]
+
+    # 2) если есть хотя бы одна пара пересечения (точки пересечения), усредняем найденные midpoints
     midpoints = []
-    # Для каждой пары: если есть пересечение — возьмём среднее точек пересечения (или единственную точку)
-    pts12 = circle_circle_intersection(c1, c2, r1, r2)
-    if pts12:
-        if len(pts12) == 1:
-            midpoints.append(pts12[0])
-        else:
-            midpoints.append(((pts12[0][0] + pts12[1][0]) / 2.0, (pts12[0][1] + pts12[1][1]) / 2.0))
-
-    pts13 = circle_circle_intersection(c1, c3, r1, r3)
-    if pts13:
-        if len(pts13) == 1:
-            midpoints.append(pts13[0])
-        else:
-            midpoints.append(((pts13[0][0] + pts13[1][0]) / 2.0, (pts13[0][1] + pts13[1][1]) / 2.0))
-
-    pts23 = circle_circle_intersection(c2, c3, r2, r3)
-    if pts23:
-        if len(pts23) == 1:
-            midpoints.append(pts23[0])
-        else:
-            midpoints.append(((pts23[0][0] + pts23[1][0]) / 2.0, (pts23[0][1] + pts23[1][1]) / 2.0))
-
-    # Если есть хотя бы одну midpoint (точка пересечения пар), усредняем все найденные midpoints
+    m12 = mid_of_circle_intersection(c1, c2, r1, r2)
+    if m12:
+        midpoints.append(m12)
+    m13 = mid_of_circle_intersection(c1, c3, r1, r3)
+    if m13:
+        midpoints.append(m13)
+    m23 = mid_of_circle_intersection(c2, c3, r2, r3)
+    if m23:
+        midpoints.append(m23)
     if midpoints:
-        avg = average_points(midpoints)
-        return (round(avg[0], 6), round(avg[1], 6))
+        p = avg_point(midpoints)
+        return [round(p[0], 6), round(p[1], 6)]
 
-    # Если пересечений нет, но некоторые пары перекрываются — используем усреднение центроидов overlapping pairs
-    overlaps = [(overlap12, (c1, c2, r1, r2, d12)),
-                (overlap13, (c1, c3, r1, r3, d13)),
-                (overlap23, (c2, c3, r2, r3, d23))]
-
-    overlap_pairs = [p[1] for p in overlaps if p[0]]
-
-    if overlap_pairs:
-        # для каждой перекрывающейся пары возьмем середину между центрами, смещённую к меньшему радиусу
+    # 3) если нет пересечений, но есть пары, которые перекрываются (count == 1 or 2)
+    if count in (1, 2):
         pts = []
-        for (ca, cb, ra, rb, dab) in overlap_pairs:
-            if dab == 0:
-                pts.append(((ca[0] + cb[0]) / 2.0, (ca[1] + cb[1]) / 2.0))
-                continue
-            # параметр t — насколько смещаемся от ca вдоль вектора к cb
-            # ближе к меньшему радиусу
-            t = ra / (ra + rb) if (ra + rb) != 0 else 0.5
-            pts.append((ca[0] + t * (cb[0] - ca[0]), ca[1] + t * (cb[1] - ca[1])))
-        avg = average_points(pts)
-        return (round(avg[0], 6), round(avg[1], 6))
+        pairs = [
+            (c1, c2, r1, r2, d12),
+            (c1, c3, r1, r3, d13),
+            (c2, c3, r2, r3, d23),
+        ]
+        for (ca, cb, ra, rb, dab) in pairs:
+            if dab < (ra + rb):
+                # точка вдоль вектора от ca к cb, смещённая пропорционально радиусам
+                if ra + rb == 0:
+                    t = 0.5
+                else:
+                    t = ra / (ra + rb)
+                pts.append((ca[0] + t * (cb[0] - ca[0]), ca[1] + t * (cb[1] - ca[1])))
+        if pts:
+            p = avg_point(pts)
+            return [round(p[0], 6), round(p[1], 6)]
+        # если count == 2, но по какой-то причине pts пуст — падём к следующему блоку
 
-    # Нет пересечений и перекрытий — используем взвешенный центроид центров с весом inversely proportional to radii
-    # (меньший радиус = ближе = больший вес)
+    # 4) нет пересечений и нет перекрытий — используем взвешенный центроид центров (вес ~ 1/r)
     centers = [c1, c2, c3]
-    # Защита от нуля
+    radii = [r1, r2, r3]
     weights = []
-    for r in (r1, r2, r3):
-        if r <= 0:
+    for r in radii:
+        if r <= 0 or not (r == r):  # защита от нуля/NaN
             weights.append(1.0)
         else:
-            # инверсия и ограничение
-            w = 1.0 / r
-            weights.append(w)
-    wc = weighted_centroid(centers, weights)
-    if wc:
-        return (round(wc[0], 6), round(wc[1], 6))
-
-    return None
-
+            weights.append(1.0 / r)
+    wsum = sum(weights)
+    if wsum == 0:
+        return None
+    cx = sum(w * c[0] for w, c in zip(weights, centers)) / wsum
+    cy = sum(w * c[1] for w, c in zip(weights, centers)) / wsum
+    return [round(cx, 6), round(cy, 6)]
 
 # --- теперь интегрируем location_by_three в поток сообщений (оставляем выбор 3 маяков по RSSI) ---
 def estimate_position_3byrssi(measurements: dict, beacons: dict, calibration: dict):
