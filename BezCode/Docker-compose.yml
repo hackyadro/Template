@@ -1,0 +1,57 @@
+services:
+  mqtt-broker:
+    image: eclipse-mosquitto:2.0
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./config/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - ./data/logs/mosquitto:/mosquitto/log
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 5 mosquitto_pub -h localhost -t test -m test || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  positioning-engine:
+    build: ./backend
+    volumes:
+      - ./data:/app/data
+    environment:
+      - MQTT_BROKER=mqtt-broker
+      - MQTT_PORT=1883
+    depends_on:
+      mqtt-broker:
+        condition: service_healthy
+    restart: unless-stopped
+
+  esp32-simulator:
+    build: ./esp32_simulator
+    volumes:
+      - ./data:/app/data
+    environment:
+      - MQTT_BROKER=mqtt-broker
+      - MQTT_PORT=1883
+      - MODE=simulator
+    depends_on:
+      mqtt-broker:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - MQTT_BROKER=mqtt-broker
+      - MQTT_PORT=9001
+    depends_on:
+      - mqtt-broker
+    restart: unless-stopped
+
+volumes:
+  mqtt-data:
+  app-data:
