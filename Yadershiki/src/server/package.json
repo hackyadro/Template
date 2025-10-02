@@ -5,7 +5,9 @@
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
-    "path": "^0.12.7"
+    "mqtt": "^5.14.1",
+    "path": "^0.12.7",
+    "socket.io": "^4.8.1"
   },
   "name": "server",
   "type": "module",
