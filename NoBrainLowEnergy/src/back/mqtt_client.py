@@ -386,20 +386,24 @@ class MQTTClient:
                         logger.error(f"Error in message callback: {e}")
 
             positional_data = self.distance_model.Calc(received_msg)
+            print("Position: " + str(positional_data))
             try:
                 position = positional_data.get("position") if isinstance(positional_data, dict) else None
+                # print("Position: " + position)
             except Exception:
                 position = None
+                # print("position is null")
             if position is not None:
                 self._write_position_to_influx(position, received_msg.topic, received_msg.timestamp)
+                # print("Position: " + position)
             # Optionally forward to front-end if such integration exists
             try:
                 front.send(positional_data)  # type: ignore[name-defined]
             except Exception:
                 pass
 
-            logger.debug(f"Received message on topic: {msg.topic}")
-            print(f"Received message on topic LOL: {msg.payload}")
+            # logger.debug(f"Received message on topic: {msg.topic}")
+            # print(f"Received message on topic LOL: {msg.payload}")
 
         except json.JSONDecodeError:
             logger.error(f"Failed to decode JSON payload from topic: {msg.topic}")

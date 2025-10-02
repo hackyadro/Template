@@ -1,5 +1,5 @@
-from fastapi import APIRouter, HTTPException, Query
-from typing import List, Optional
+from fastapi import APIRouter, HTTPException, Query, Form
+from typing import List, Optional, Annotated
 from datetime import datetime, timedelta
 
 from models import (
@@ -14,17 +14,19 @@ router = APIRouter(prefix="/api/v1", tags=["devices"])
 # This would be injected or passed from main app
 mqtt_client: Optional[MQTTClient] = None
 
+
 def set_mqtt_client(client: MQTTClient):
     """Set the MQTT client instance"""
     global mqtt_client
     mqtt_client = client
 
+
 @router.get("/devices", response_model=PaginatedResponse)
 async def list_devices(
-    page: int = Query(1, ge=1),
-    size: int = Query(10, ge=1, le=100),
-    status: Optional[str] = Query(None, description="Filter by device status"),
-    device_type: Optional[str] = Query(None, description="Filter by device type")
+        page: int = Query(1, ge=1),
+        size: int = Query(10, ge=1, le=100),
+        status: Optional[str] = Query(None, description="Filter by device status"),
+        device_type: Optional[str] = Query(None, description="Filter by device type")
 ):
     """List all devices with pagination and filtering"""
     # Mock data - in real implementation, this would query a database
@@ -38,21 +40,21 @@ async def list_devices(
         }
         for i in range(1, 51)  # 50 mock devices
     ]
-    
+
     # Apply filters
     filtered_devices = mock_devices
     if status:
         filtered_devices = [d for d in filtered_devices if d["status"] == status]
     if device_type:
         filtered_devices = [d for d in filtered_devices if d["device_type"] == device_type]
-    
+
     # Apply pagination
     start_idx = (page - 1) * size
     end_idx = start_idx + size
     paginated_devices = filtered_devices[start_idx:end_idx]
-    
+
     total_pages = (len(filtered_devices) + size - 1) // size
-    
+
     return PaginatedResponse(
         items=paginated_devices,
         total=len(filtered_devices),
@@ -60,6 +62,7 @@ async def list_devices(
         size=size,
         pages=total_pages
     )
+
 
 @router.get("/devices/{device_id}", response_model=DeviceStatus)
 async def get_device(device_id: str):
@@ -75,40 +78,39 @@ async def get_device(device_id: str):
         uptime=3600,
         error_count=0
     )
-    
+
     return mock_device
 
-@router.post("/devices/{device_id}/command", response_model=APIResponse)
-async def send_command(device_id: str, command: DeviceCommand):
-    """Send command to a specific device via MQTT"""
-    if not mqtt_client or not mqtt_client.is_connected():
-        raise HTTPException(status_code=503, detail="MQTT client not connected")
-    
-    try:
-        topic = f"nobrainlowenergy/devices/{device_id}/commands"
-        payload = command.dict()
-        
-        await mqtt_client.publish(topic, payload)
-        
-        return APIResponse(
-            status="success",
-            message=f"Command sent to device {device_id}",
-            data={"command_id": command.command_id, "topic": topic}
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to send command: {str(e)}")
+
+# @router.post("/calibrate/{device_name}", response_model=APIResponse)
+# async def calibrate_device(device_name: Annotated[str, Form()],
+#                            beacon_name: Annotated[str, Form()]):
+#     """Send command to a specific device via MQTT"""
+#     if not mqtt_client or not mqtt_client.is_connected():
+#         raise HTTPException(status_code=503, detail="MQTT client not connected")
+#
+#     try:
+#         topic = f"devices/{device_name}/beacons"
+#
+#         return APIResponse(
+#             status="OK",
+#             message=f"Calibrated device {device_name}"
+#         )
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=f"Failed to calibrate device {device_name}: {str(e)}")
+
 
 @router.get("/devices/{device_id}/sensor-data")
 async def get_sensor_data(
-    device_id: str,
-    hours: int = Query(24, ge=1, le=168, description="Hours of data to retrieve"),
-    sensor_type: Optional[str] = Query(None, description="Filter by sensor type")
+        device_id: str,
+        hours: int = Query(24, ge=1, le=168, description="Hours of data to retrieve"),
+        sensor_type: Optional[str] = Query(None, description="Filter by sensor type")
 ):
     """Get sensor data for a specific device"""
     # Mock data - in real implementation, this would query a database
     mock_data = []
     base_time = datetime.utcnow()
-    
+
     for i in range(hours):
         timestamp = base_time - timedelta(hours=i)
         mock_data.append({
@@ -120,7 +122,7 @@ async def get_sensor_data(
             "battery_level": max(0, 100 - i),
             "signal_strength": -50 - (i % 20)
         })
-        
+
         if sensor_type != "temperature":
             mock_data.append({
                 "sensor_id": f"{device_id}_humidity",
@@ -131,16 +133,17 @@ async def get_sensor_data(
                 "battery_level": max(0, 100 - i),
                 "signal_strength": -50 - (i % 20)
             })
-    
+
     # Apply sensor type filter
     if sensor_type:
         mock_data = [d for d in mock_data if d["sensor_type"] == sensor_type]
-    
+
     return {
         "device_id": device_id,
         "data": mock_data,
         "count": len(mock_data)
     }
+
 
 @router.get("/system/status", response_model=SystemStatus)
 async def get_system_status():
@@ -156,11 +159,12 @@ async def get_system_status():
         uptime=86400  # 1 day in seconds
     )
 
+
 @router.get("/alerts", response_model=List[AlertMessage])
 async def get_alerts(
-    severity: Optional[str] = Query(None, description="Filter by severity"),
-    acknowledged: Optional[bool] = Query(None, description="Filter by acknowledgment status"),
-    limit: int = Query(50, ge=1, le=100)
+        severity: Optional[str] = Query(None, description="Filter by severity"),
+        acknowledged: Optional[bool] = Query(None, description="Filter by acknowledgment status"),
+        limit: int = Query(50, ge=1, le=100)
 ):
     """Get system alerts"""
     # Mock data - in real implementation, this would query a database
@@ -176,15 +180,16 @@ async def get_alerts(
         )
         for i in range(1, 21)
     ]
-    
+
     # Apply filters
     filtered_alerts = mock_alerts
     if severity:
         filtered_alerts = [a for a in filtered_alerts if a.severity == severity]
     if acknowledged is not None:
         filtered_alerts = [a for a in filtered_alerts if a.acknowledged == acknowledged]
-    
+
     return filtered_alerts[:limit]
+
 
 @router.post("/alerts/{alert_id}/acknowledge", response_model=APIResponse)
 async def acknowledge_alert(alert_id: str):
