@@ -91,28 +91,11 @@ async function trilaterate(dirname, rssiData) {
     
     const beaconsWithDistances = calculateBeaconDistances(topThreeBeacons);
     
-    console.log("\nCircles for trilateration:");
-    beaconsWithDistances.forEach((beacon, index) => {
-        console.log(`Circle ${index + 1} (${beacon.name}):`);
-        console.log(`  Center: (${beacon.x}, ${beacon.y})`);
-        console.log(`  Raduis: ${beacon.distance.toFixed(2)} м`);
-    });
-    
     const estimatedPosition = trilaterateThreeCircles(beaconsWithDistances);
     
-    if (estimatedPosition) {
-        console.log(`\n Estimated location: (${estimatedPosition.x.toFixed(2)}, ${estimatedPosition.y.toFixed(2)})`);
-    }
     
-    console.log("\nAll the beacons:");
-    sortedBeacons.forEach(beacon => {
-        console.log(`${beacon.name}: X=${beacon.x}, Y=${beacon.y}, RSSI=${beacon.RSSI}`);
-    });
     
     return {
-        allBeacons: sortedBeacons,
-        topThreeBeacons: topThreeBeacons,
-        circles: beaconsWithDistances,
         estimatedPosition: estimatedPosition,
     };
 }
