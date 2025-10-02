@@ -38,3 +38,4 @@ black==23.11.0
 flake8==6.1.0
 mypy==1.7.1
 ujson==5.11.0
+influxdb-client==1.43.0

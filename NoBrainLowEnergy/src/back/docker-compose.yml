@@ -19,6 +19,10 @@ services:
       - MQTT_USERNAME=your_mqtt_username
       - FASTAPI_TLS_ON=false
       - MQTT_AUTO_SUBSCRIBE_TOPICS=devices/+/beacons
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=${INFLUXDB_TOKEN:-admintoken}
+      - INFLUXDB_ORG=nobrain
+      - INFLUXDB_BUCKET=default
       # Add SSL_KEY_FILE and SSL_CERT_FILE if you want HTTPS enabled for FastAPI
       # - SSL_KEY_FILE=/app/certs/server.key
       # - SSL_CERT_FILE=/app/certs/server.crt
@@ -27,6 +31,7 @@ services:
       - ./logs:/app/logs
     depends_on:
       - mosquitto
+      - influxdb
     restart: unless-stopped
     networks:
       - nobrainlowenergy
@@ -48,38 +53,49 @@ services:
       - nobrainlowenergy
 
   # Redis (optional - for caching and session storage) мне кажется это лишнее
-  redis:
-    image: redis:7-alpine
-    container_name: nobrainlowenergy-redis
+  influxdb:
+    image: influxdb:latest
+    container_name: influxdb2
+    restart: always
     ports:
-      - "6379:6379"
+      - "8086:8086" # InfluxDB uses port 8086 by default
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=adminadmin
+      - DOCKER_INFLUXDB_INIT_ORG=nobrain
+      - DOCKER_INFLUXDB_INIT_BUCKET=default
+      - DOCKER_INFLUXDB_INIT_RETENTION=0
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=${INFLUXDB_TOKEN:-admintoken}
     volumes:
-      - redis_data:/data
-    restart: unless-stopped
+      - influxdb-data:/var/lib/influxdb2
+      - influxdb-config:/etc/influxdb2
     networks:
       - nobrainlowenergy
 
   # PostgreSQL (optional - for persistent data storage) скорее что-то полегче будет лучше, типа мб sqlite??
-  postgres:
-    image: postgres:15-alpine
-    container_name: nobrainlowenergy-db
-    environment:
-      - POSTGRES_DB=nobrainlowenergy
-      - POSTGRES_USER=admin
-      - POSTGRES_PASSWORD=your_secure_password
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    restart: unless-stopped
-    networks:
-      - nobrainlowenergy
+#  postgres:
+#    image: postgres:15-alpine
+#    container_name: nobrainlowenergy-db
+#    environment:
+#      - POSTGRES_DB=nobrainlowenergy
+#      - POSTGRES_USER=admin
+#      - POSTGRES_PASSWORD=your_secure_password
+#    ports:
+#      - "5432:5432"
+#    volumes:
+#      - postgres_data:/var/lib/postgresql/data
+#    restart: unless-stopped
+#    networks:
+#      - nobrainlowenergy
 
 volumes:
   mosquitto_data:
   mosquitto_logs:
   redis_data:
   postgres_data:
+  influxdb-data:
+  influxdb-config:
 
 
 networks:

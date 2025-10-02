@@ -13,6 +13,15 @@ from paho.mqtt.client import MQTTMessage
 
 from models import ReceivedMQTTMessage, QoSLevel
 
+# InfluxDB client
+try:
+    from influxdb_client import InfluxDBClient, Point
+    from influxdb_client.client.write_api import SYNCHRONOUS
+except Exception:  # Library may not be installed in some environments
+    InfluxDBClient = None
+    Point = None
+    SYNCHRONOUS = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -44,6 +53,14 @@ class MQTTClient:
         self.tls_insecure = tls_insecure
         self.distance_model = Distance_model()
 
+        # InfluxDB settings (lazy init)
+        self._influx_client = None
+        self._influx_write_api = None
+        self._influx_bucket = os.getenv("INFLUXDB_BUCKET")
+        self._influx_org = os.getenv("INFLUXDB_ORG")
+        self._influx_url = os.getenv("INFLUXDB_URL")
+        self._influx_token = os.getenv("INFLUXDB_TOKEN")
+
         # Message storage
         self.recent_messages = deque(maxlen=1000)
         self.subscribed_topics = set()
@@ -55,6 +72,76 @@ class MQTTClient:
 
         # Callbacks
         self.message_callbacks: Dict[str, Callable] = {}
+
+    # -------- InfluxDB helpers --------
+    def _ensure_influx(self):
+        """Initialize InfluxDB client lazily using environment variables."""
+        if self._influx_client or InfluxDBClient is None:
+            return
+        if not (self._influx_url and self._influx_token and self._influx_org and self._influx_bucket):
+            logger.warning("InfluxDB not configured (missing env vars); skipping writes.")
+            return
+        try:
+            self._influx_client = InfluxDBClient(url=self._influx_url, token=self._influx_token, org=self._influx_org)
+            self._influx_write_api = self._influx_client.write_api(write_options=SYNCHRONOUS)
+            logger.info("Initialized InfluxDB client")
+        except Exception as e:
+            logger.error(f"Failed to initialize InfluxDB client: {e}")
+            self._influx_client = None
+            self._influx_write_api = None
+
+    def _write_position_to_influx(self, position: Any, topic: str, timestamp: datetime):
+        """Write position data into InfluxDB as measurement 'position'.
+        - If position is dict: write numeric items as fields.
+        - If list/tuple: map to x,y,z if length is 2/3; otherwise f0, f1, ...
+        - Otherwise: store as value (if numeric) or skip.
+        """
+        # Ensure client is ready
+        if self._influx_write_api is None:
+            self._ensure_influx()
+        if self._influx_write_api is None:
+            return  # Not configured or failed to init
+        try:
+            # Build point
+            if Point is None:
+                return
+            point = Point("position").tag("topic", topic)
+
+            # Use nanosecond precision timestamp
+            point = point.time(timestamp)
+
+            def _is_number(x):
+                return isinstance(x, (int, float)) and not isinstance(x, bool)
+
+            if isinstance(position, dict):
+                wrote_any = False
+                for k, v in position.items():
+                    if _is_number(v):
+                        point = point.field(str(k), float(v))
+                        wrote_any = True
+                if not wrote_any:
+                    logger.debug("Position dict has no numeric fields; skipping write")
+                    return
+            elif isinstance(position, (list, tuple)):
+                names = ["x", "y", "z"] if len(position) in (2, 3) else [f"f{i}" for i in range(len(position))]
+                wrote_any = False
+                for name, v in zip(names, position):
+                    if _is_number(v):
+                        point = point.field(name, float(v))
+                        wrote_any = True
+                if not wrote_any:
+                    logger.debug("Position list has no numeric values; skipping write")
+                    return
+            else:
+                if _is_number(position):
+                    point = point.field("value", float(position))
+                else:
+                    logger.debug("Unsupported position type; skipping write")
+                    return
+
+            self._influx_write_api.write(bucket=self._influx_bucket, record=point)
+        except Exception as e:
+            logger.error(f"Failed to write position to InfluxDB: {e}")
 
     def is_connected(self) -> bool:
         """Check if client is connected"""
@@ -298,10 +385,18 @@ class MQTTClient:
                     except Exception as e:
                         logger.error(f"Error in message callback: {e}")
 
-            # TODO: database
             positional_data = self.distance_model.Calc(received_msg)
-            db.add(positional_data.get(position))
-            front.send(positional_data)
+            try:
+                position = positional_data.get("position") if isinstance(positional_data, dict) else None
+            except Exception:
+                position = None
+            if position is not None:
+                self._write_position_to_influx(position, received_msg.topic, received_msg.timestamp)
+            # Optionally forward to front-end if such integration exists
+            try:
+                front.send(positional_data)  # type: ignore[name-defined]
+            except Exception:
+                pass
 
             logger.debug(f"Received message on topic: {msg.topic}")
             print(f"Received message on topic LOL: {msg.payload}")
