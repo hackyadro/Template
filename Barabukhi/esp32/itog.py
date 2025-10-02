@@ -3,19 +3,16 @@ import time
 import sys
 import ujson
 
-# -------- Глобальные переменные --------
+
+SSID = "Xiaomi_1360"
+PASSWORD = "qwasd3rf"
+
 map_name = None
 beacons = []
 freq = None
 write_road = None
-
-# -------- Константы --------
 MAC_ADDRESS = None
 JSON_PARSE_ERROR = "JSON parse error:"
-
-# -------- Wi-Fi --------
-SSID = "Xiaomi_1360"
-PASSWORD = ""
 
 def wifi_connect(ssid, pwd):
     wifi = network.WLAN(network.STA_IF)
@@ -39,7 +36,6 @@ def wifi_connect(ssid, pwd):
         print("IP address:", ip)
         return True
 
-
 try:
     import urequests as requests
 except ImportError:
@@ -50,16 +46,6 @@ def do_post(url, json_dict=None):
     try:
         print("HTTP POST:", url)
         body = ujson.dumps(json_dict) if json_dict else None
-        # headers = {"Content-Type": "application/json"} if json_dict else None
-
-        # headers = {
-        #     "User-Agent": "curl/8.7.1",
-        #     "Accept": "*/*",
-        #     "Content-Type": "application/x-www-form-urlencoded",
-        #     "Cache-Control": "no-cache, no-store, must-revalidate",
-        #     "Pragma": "no-cache",
-        #     "Expires": "0",
-        # }
 
         headers = {
             "Accept": "application/json",
@@ -71,8 +57,6 @@ def do_post(url, json_dict=None):
         try:
             with open("last_response.txt", "w") as f:
                 f.write(text)
-                # print("Response saved to last_response.txt")
-                # print("Response head:", text)
         except Exception as e:
             print("Save error:", e)
         r.close()
@@ -106,14 +90,9 @@ def set_mac_address():
 def update_map():
     global map_name, beacons
     
-    url_post = "http://192.168.31.211:8000/beacons"
-    # payload = {"mac": MAC_ADDRESS}
-    payload = {"name": "string_2", "x_coordinate": 0, "y_coordinate": 0, "description": "string_2"}
+    url_post = "http://192.168.31.211:8000/get_map"
+    payload = {"mac": MAC_ADDRESS}
     status, body = do_post(url_post, json_dict=payload)
-    # status = 200
-    # body = '{"map_name": "office_floor_1","beacons": ["beacon_1","beacon_2","beacon_3","beacon_4","beacon_5","beacon_6","beacon_7","beacon_8"]}'
-
-    # headers = {"Content-Type": "application/json"} if json_dict else None
 
     if status == 200 and body:
         print("update_map: POST response head:", body[:200])
@@ -139,7 +118,7 @@ def update_map():
 def update_freq():
     global freq
     
-    url_post = "http://q1zin-nsu.ru/get_freq.php"
+    url_post = "http://192.168.31.211:8000/get_freq"
     payload = {"mac": MAC_ADDRESS}
     status, body = do_post(url_post, json_dict=payload)
     # status = 200
@@ -164,8 +143,8 @@ def update_freq():
 
 def update_status_road():
     global write_road
-    
-    url_post = "http://q1zin-nsu.ru/get_status_road.php"
+
+    url_post = "http://192.168.31.211:8000/get_status_road"
     payload = {"mac": MAC_ADDRESS}
     status, body = do_post(url_post, json_dict=payload)
     # status = 200
@@ -190,13 +169,10 @@ def update_status_road():
 
 def ping_server():
     """Пингует сервер для проверки изменений"""
-    url_post = "http://q1zin-nsu.ru/ping.php"
+    url_post = "http://192.168.31.211:8000/ping"
     payload = {"mac": MAC_ADDRESS}
     status, body = do_post(url_post, json_dict=payload)
 
-    # status = 200
-    # body = '{"change": false, "change_list": []}'
-    
     if status == 200 and body:
         try:
             data = ujson.loads(body)
@@ -259,7 +235,7 @@ def run_pingator():
             break
         except Exception as e:
             print(f"Pingator error: {e}")
-            time.sleep(1)  # Ждем перед повтором при ошибке
+            time.sleep(1)
 
 if __name__ == "__main__":
     if not wifi_connect(SSID, PASSWORD):
@@ -270,15 +246,12 @@ if __name__ == "__main__":
     update_freq()
     update_status_road()
 
-    print("\n\n\n")
+    print("\n\n")
     print("Mac Address:", MAC_ADDRESS)
     print("Map Name:", map_name)
     print("Beacons:", beacons)
     print("Frequency:", freq)
     print("Write Road Status:", write_road)
-
-    print("Done with initialization.")
-    print("Starting pingator...")
+    print("\n\n")
     
-    # Запускаем пингатор
     run_pingator()
