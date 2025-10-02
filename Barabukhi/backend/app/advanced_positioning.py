@@ -4,11 +4,20 @@
 - Робастной оценкой (Huber)
 - Нелинейным МНК (Levenberg-Marquardt) с якорем к предыдущей позиции
 - Взвешиванием по количеству проб и геометрии
+- Поддержкой отчётов с MAC-адресами маяков и samples
 """
 
 import math
 from typing import Dict, Tuple, List, Optional
 import numpy as np
+
+
+class BeaconData:
+    """Данные маяка для расчётов"""
+    def __init__(self, name: str, x: float, y: float):
+        self.name = name
+        self.x = x
+        self.y = y
 
 
 class AdvancedPositioningEngine:
@@ -27,6 +36,18 @@ class AdvancedPositioningEngine:
     }
 
     KNOWN_CALIBRATION_POINT = (0.0, 0.0)
+
+    # MAC-адреса маяков для маппинга beacon_name -> MAC
+    BEACON_MAC_MAP = {
+        'beacon_1': '88:57:21:23:34:CA',
+        'beacon_2': '84:1F:E8:09:88:96',
+        'beacon_3': '84:1F:E8:45:49:8E',
+        'beacon_4': '88:57:21:23:3D:D6',
+        'beacon_5': '88:57:21:23:50:46',
+        'beacon_6': '88:57:21:23:3F:6E',
+        'beacon_7': '4C:C3:82:C4:27:AA',
+        'beacon_8': '88:57:21:23:XX:XX',  # Заменить на реальный MAC
+    }
 
     def __init__(self):
         self.alpha = -59.0  # RSSI на 1м (будет калиброваться)
@@ -314,6 +335,127 @@ class AdvancedPositioningEngine:
 
         except Exception:
             return None
+
+    def calculate_position_with_samples(
+        self,
+        report_data: Dict[str, Dict[str, float]],
+        beacons_map: Dict[str, Tuple[float, float]],
+        rssi_threshold: float = -100.0,
+        min_distance: float = 0.5,
+        max_distance: float = 100.0,
+        prior_weight: float = 0.1
+    ) -> Optional[Tuple[float, float, float, str]]:
+        """
+        Вычислить позицию по отчёту с учётом samples.
+
+        Args:
+            report_data: {beacon_name: {'rssi': value, 'samples': count}}
+            beacons_map: {beacon_name: (x, y)}
+            rssi_threshold: минимальный RSSI для учёта
+            min_distance: минимальная дистанция (метры)
+            max_distance: максимальная дистанция (метры)
+            prior_weight: сила якоря к предыдущей позиции
+
+        Returns:
+            (x, y, accuracy, algorithm) или None
+        """
+        distances: Dict[str, float] = {}
+        weights: Dict[str, float] = {}
+
+        for beacon_name, info in report_data.items():
+            rssi = float(info.get('rssi', -999))
+            samples = int(info.get('samples', 1))
+
+            if rssi < rssi_threshold:
+                continue
+            if beacon_name not in beacons_map:
+                continue
+
+            d = self.rssi_to_distance(rssi, self.alpha, self.beta)
+            d = max(min_distance, min(max_distance, d))
+            distances[beacon_name] = d
+
+            # Вес по количеству проб + геометрический вес
+            w_samp = 1.0 + 0.25 * max(0, samples - 1)
+            w_geo = 1.0 / max(0.5, d) ** 2
+            weights[beacon_name] = w_samp * w_geo
+
+        if len(distances) < 3:
+            return None
+
+        # Стартовая позиция
+        if self.prev_position:
+            start_xy = self.prev_position
+            prior_xy = self.prev_position
+        else:
+            used_beacons = [beacons_map[n] for n in distances.keys()]
+            start_xy = (
+                sum(b[0] for b in used_beacons) / len(used_beacons),
+                sum(b[1] for b in used_beacons) / len(used_beacons)
+            )
+            prior_xy = start_xy
+
+        try:
+            x, y = self.solve_position_nlls(
+                beacons_map,
+                distances,
+                weights,
+                start_xy=start_xy,
+                prior_xy=prior_xy,
+                prior_weight=prior_weight,
+                iters=30,
+                lm_lambda=1e-3
+            )
+
+            self.prev_position = (x, y)
+
+            # Вычисляем accuracy
+            errors = []
+            for name, d_measured in distances.items():
+                bx, by = beacons_map[name]
+                d_calc = math.hypot(x - bx, y - by)
+                errors.append(abs(d_calc - d_measured))
+
+            accuracy = sum(errors) / len(errors) if errors else 0.0
+
+            return x, y, accuracy, "nlls_lm_with_samples"
+
+        except Exception:
+            return None
+
+    @staticmethod
+    def parse_report_block(block: str) -> Dict[str, Dict[str, float]]:
+        """
+        Парсит отчёт вида:
+        beacon_1;-63.3;MAC;samples=3
+        -> {beacon_name: {'rssi': -63.3, 'samples': 3, 'mac': 'MAC'}}
+        """
+        data: Dict[str, Dict[str, float]] = {}
+        for line in block.splitlines():
+            line = line.strip()
+            if not line or line.startswith('===') or line.startswith('Отчет'):
+                continue
+            parts = line.split(';')
+            if len(parts) < 4:
+                continue
+
+            name = parts[0].strip()
+            try:
+                rssi = float(parts[1].strip())
+            except ValueError:
+                continue
+
+            mac = parts[2].strip()
+            samples = 1
+            try:
+                if parts[3].startswith('samples='):
+                    samples = int(parts[3].split('=')[1])
+            except Exception:
+                pass
+
+            data[name] = {'rssi': rssi, 'samples': samples, 'mac': mac}
+
+        return data
 
     def reset_position(self):
         """Сбросить предыдущую позицию (для нового трека)"""

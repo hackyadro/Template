@@ -17,6 +17,11 @@ from app.models import (
     PositionRequest, PositionResponse, PathPoint, DevicePathResponse
 )
 from app.positioning import PositioningEngine, BeaconData
+from app.advanced_positioning import AdvancedPositioningEngine
+
+# Глобальный экземпляр продвинутого движка позиционирования
+advanced_engine = AdvancedPositioningEngine()
+engine_calibrated = False
 
 app = FastAPI(
     title="Indoor Navigation API",
@@ -225,6 +230,8 @@ async def send_signal(request: SendSignalRequest, db: AsyncSession = Depends(get
     """
     Принять данные о сигналах от маяков и вычислить позицию
     """
+    global engine_calibrated
+
     # Получаем или создаём устройство
     result = await db.execute(
         text("SELECT id, map_id, write_road FROM devices WHERE mac = :mac"),
@@ -290,14 +297,24 @@ async def send_signal(request: SendSignalRequest, db: AsyncSession = Depends(get
         {"map_id": map_id}
     )
     beacons_data = beacons_result.fetchall()
-    beacons_map = {
-        row.name: BeaconData(row.name, float(row.x_coordinate), float(row.y_coordinate))
+    beacons_map_tuples = {
+        row.name: (float(row.x_coordinate), float(row.y_coordinate))
         for row in beacons_data
     }
 
-    # Вычисляем позицию
+    # Калибруем продвинутый движок при первом запросе
+    if not engine_calibrated and beacons_map_tuples:
+        advanced_engine.calibrate(beacons_map_tuples)
+        engine_calibrated = True
+        print(f"[Calibration] alpha={advanced_engine.alpha:.3f}, beta={advanced_engine.beta:.3f}")
+
+    # Вычисляем позицию с использованием продвинутого алгоритма
     signals = [(signal.name, signal.signal) for signal in request.list]
-    position_data = PositioningEngine.calculate_position(signals, beacons_map)
+    position_data = advanced_engine.calculate_position(
+        signals,
+        beacons_map_tuples,
+        prior_weight=0.1
+    )
 
     if position_data:
         x, y, accuracy, algorithm = position_data
@@ -319,11 +336,54 @@ async def send_signal(request: SendSignalRequest, db: AsyncSession = Depends(get
                 }
             )
 
+        # Broadcast позиции через WebSocket всем подключенным клиентам
+        await manager.broadcast_position({
+            "device_id": device_id,
+            "mac": request.mac,
+            "map_id": map_id,
+            "x": x,
+            "y": y,
+            "accuracy": accuracy,
+            "algorithm": algorithm,
+            "timestamp": time.time()
+        })
+
     await db.commit()
     return SendSignalResponse(accept=True)
 
 
 # ==================== WEBSOCKET API ====================
+
+# Менеджер WebSocket соединений для broadcast позиций
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+
+    async def broadcast_position(self, data: dict):
+        """Отправить позицию всем подключенным клиентам"""
+        disconnected = []
+        for connection in self.active_connections:
+            try:
+                await connection.send_text(json.dumps({
+                    "type": "position_update",
+                    "data": data
+                }))
+            except Exception:
+                disconnected.append(connection)
+
+        # Удаляем отключенные соединения
+        for conn in disconnected:
+            self.disconnect(conn)
+
+manager = ConnectionManager()
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket, db: AsyncSession = Depends(get_db)):
@@ -331,10 +391,10 @@ async def websocket_endpoint(websocket: WebSocket, db: AsyncSession = Depends(ge
     WebSocket endpoint для real-time коммуникации с фронтендом.
 
     Формат сообщений:
-    Входящие: { "type": "get_all_device" | "get_list_map" | "write_road", "data": {...} }
-    Исходящие: { "type": "all_device" | "list_map" | "write_road", "data": {...} }
+    Входящие: { "type": "get_all_device" | "get_list_map" | "write_road" | "subscribe_position", "data": {...} }
+    Исходящие: { "type": "all_device" | "list_map" | "write_road" | "position_update", "data": {...} }
     """
-    await websocket.accept()
+    await manager.connect(websocket)
 
     try:
         while True:
@@ -436,8 +496,10 @@ async def websocket_endpoint(websocket: WebSocket, db: AsyncSession = Depends(ge
                 }))
 
     except WebSocketDisconnect:
+        manager.disconnect(websocket)
         print("WebSocket client disconnected")
     except Exception as e:
+        manager.disconnect(websocket)
         print(f"WebSocket error: {e}")
         try:
             await websocket.close()
