@@ -89,11 +89,14 @@ class SessionManager:
     async def stop_session(self, session_id: str) -> Dict[str, Any]:
         """Останавливает сессию, закрывает WS"""
         with self._lock:
+            self.tracking_started = False
+        self.save_session_path(session_id, session_id)
+
+        with self._lock:
             session = self.active_session.copy()
             conns = self.websocket_connections.copy()
             self.active_session.clear()
             self.websocket_connections.clear()
-            self.tracking_started = False
         if not session:
             return {"status": "error", "message": "Session not found"}
 
