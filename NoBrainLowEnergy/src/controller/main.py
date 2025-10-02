@@ -10,7 +10,6 @@ except ImportError:  # pragma: no cover - fallback for standard json
     import json  # type: ignore
 
 from umqtt.simple import MQTTClient  # type: ignore
-# from boot import ble  # type: ignore
 
 _IRQ_SCAN_RESULT = const(5)  # or const(4) / const( _IRQ_SCAN_RESULT ) depending on version
 _IRQ_SCAN_DONE = const(6)
@@ -141,36 +140,55 @@ class BeaconPublisher:
         if not client:
             return
 
-        for addr, info in list(beacons.items()):
-            if not info.get("dirty"):
-                continue
+        dirty_entries = [
+            (addr, info)
+            for addr, info in beacons.items()
+            if info.get("dirty")
+        ]
 
-            payload_dict = {
-                "device_id": self._device_id,
-                "address": addr,
-                "name": info.get("name"),
-                "rssi": info.get("rssi"),
-                "last_seen": info.get("last_seen"),
-                "scan_count": info.get("scan_count"),
-            }
-            try:
-                payload = json.dumps(payload_dict)
-            except Exception as exc:
-                print("Failed to encode payload:", exc)
+        if not dirty_entries:
+            self._maybe_ping()
+            return
+
+        payload_beacons = []
+        for addr, info in dirty_entries:
+            payload_beacons.append(
+                {
+                    "address": addr,
+                    "name": info.get("name"),
+                    "rssi": info.get("rssi"),
+                    "last_seen": info.get("last_seen"),
+                    "scan_count": info.get("scan_count"),
+                }
+            )
+
+        envelope = {
+            "device_id": self._device_id,
+            "timestamp": utime.time(),
+            "count": len(payload_beacons),
+            "beacons": payload_beacons,
+        }
+
+        try:
+            payload = json.dumps(envelope)
+        except Exception as exc:
+            print("Failed to encode aggregated payload:", exc)
+            for _, info in dirty_entries:
+                info["dirty"] = False # if we got here things are bad
+            print("SILENT FAIL: Cleared dirty flags despite encoding failure.")
+            return
+
+        if isinstance(payload, str):
+            payload = payload.encode("utf-8")
+
+        try:
+            client.publish(self.topic_bytes, payload)
+            for _, info in dirty_entries:
                 info["dirty"] = False
-                continue
-
-            if isinstance(payload, str):
-                payload = payload.encode("utf-8")
-
-            try:
-                client.publish(self.topic_bytes, payload)
-                info["dirty"] = False
-                self._touch()
-            except OSError as exc:
-                print("MQTT publish failed:", exc)
-                self.disconnect()
-                break
+            self._touch()
+        except OSError as exc:
+            print("MQTT publish failed:", exc)
+            self.disconnect()
 
         self._maybe_ping()
 
@@ -311,7 +329,7 @@ def bt_irq(event, data):
 def scan_loop(frequency, publisher=None):
     global scan_active
 
-    ble.irq(bt_irq)
+    ble.irq(bt_irq) # type: ignore
 
     scan_period_ms = max(get_scan_period_ms(frequency), 20)
     scan_duration_ms = min(max(scan_period_ms - 10, 20), 5000)
@@ -322,7 +340,7 @@ def scan_loop(frequency, publisher=None):
         if not scan_active:
             try:
                 scan_active = True
-                ble.gap_scan(scan_duration_ms, SCAN_WINDOW_US, SCAN_WINDOW_US)
+                ble.gap_scan(scan_duration_ms, SCAN_WINDOW_US, SCAN_WINDOW_US) # type: ignore
             except Exception as e:
                 scan_active = False
                 print("Scan start error:", e)
