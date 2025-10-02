@@ -123,7 +123,38 @@ const handleWsMessage = (msg: InMsg) => {
     if (!ok) console.error('write_road error:', msg.data);
     return;
   }
+  if (msg.type === 'position_update') {
+    handlePositionUpdate(msg.data);
+    return;
+  }
   console.warn('Unhandled WS type:', msg.type, msg.data);
+};
+
+const handlePositionUpdate = (data: any) => {
+  const mac = data.mac as string;
+  const x = Number(data.x);
+  const y = Number(data.y);
+  const timestamp = data.timestamp ? new Date(data.timestamp * 1000) : new Date();
+
+  const device = devices.value.find(d => d.mac === mac);
+  if (!device) {
+    console.warn('Position update for unknown device:', mac);
+    return;
+  }
+
+  // Добавляем новую точку в путь только если устройство активно
+  if (device.isPolling && device.visible) {
+    device.path.push({
+      x,
+      y,
+      timestamp
+    });
+
+    // Ограничиваем историю (например, последние 100 точек)
+    if (device.path.length > 100) {
+      device.path.shift();
+    }
+  }
 };
 
 // helper to send current map's paths to server (optional)
@@ -237,21 +268,35 @@ const deleteMap = (mapId: string) => {
   saveToLocalStorage();
 };
 
-// Получение позиции для устройства (заглушка)
-const fetchPositionFromServer = async (_device: Device, _map: Map | undefined): Promise<PathPoint | null> => {
+// Получение позиции для устройства через REST API (если нужно polling без WebSocket)
+const fetchPositionFromServer = async (device: Device, map: Map | undefined): Promise<PathPoint | null> => {
   try {
-    // Здесь должен быть вызов реального API эндпоинта
-    // Например: const response = await fetch('http://localhost:8080/api/position');
-    // const data = await response.json();
-    
-    // Заглушка для демонстрации (имитация получения данных с сервера)
-    const mockX = Math.random() * 10 - 5;
-    const mockY = Math.random() * 40;
-    
+    if (!map) return null;
+
+    // Запрос позиции через REST API
+    const backendUrl = (typeof location !== 'undefined' && location.hostname)
+      ? `http://${location.hostname}:8000`
+      : 'http://localhost:8000';
+
+    const response = await fetch(`${backendUrl}/api/position`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mac: device.mac,
+        map_name: map.name
+      })
+    });
+
+    if (!response.ok) {
+      console.error('Position API error:', response.status);
+      return null;
+    }
+
+    const data = await response.json();
     return {
-      x: mockX,
-      y: mockY,
-      timestamp: new Date()
+      x: data.x,
+      y: data.y,
+      timestamp: new Date(data.timestamp)
     };
   } catch (error) {
     console.error('Ошибка получения позиции:', error);
@@ -320,14 +365,11 @@ const startDevicePolling = (deviceId: string) => {
   }
   d.isPolling = true;
   d.path = [];
-  const poll = async () => {
-    const point = await fetchPositionFromServer(d, m);
-    if (point && d.isPolling) {
-      d.path.push(point);
-    }
-  };
-  poll();
-  d.pollIntervalId = window.setInterval(poll, pollIntervalMsFor(d.pollFrequency));
+
+  // Теперь позиции приходят автоматически через WebSocket (position_update)
+  // Можно опционально делать периодический запрос через REST API для fallback
+  // Но основной механизм — WebSocket broadcast от бэкенда при получении сигналов
+  console.log(`Started tracking device: ${d.name} (${d.mac}) on map ${m.name}`);
 };
 
 const stopDevicePolling = (deviceId: string) => {
