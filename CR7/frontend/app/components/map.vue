@@ -15,6 +15,7 @@ interface Beacon {
 const props = defineProps<{
   beacons: Beacon[]
   position: Position | null
+  path: Position[]
 }>()
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
@@ -67,12 +68,27 @@ function draw() {
 
   // маяки
   ctx.fillStyle = "blue"
+  ctx.font = "12px Arial"
   for (const b of props.beacons) {
     const { cx, cy } = toCanvasCoords(b.x, b.y)
     ctx.beginPath()
     ctx.arc(cx, cy, 6, 0, Math.PI * 2)
     ctx.fill()
     ctx.fillText(b.name, cx + 8, cy - 8)
+  }
+
+  // путь (если есть)
+  if (props.path && props.path.length > 1) {
+    ctx.strokeStyle = "green"
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    const start = toCanvasCoords(props.path[0].x, props.path[0].y)
+    ctx.moveTo(start.cx, start.cy)
+    for (let i = 1; i < props.path.length; i++) {
+      const { cx, cy } = toCanvasCoords(props.path[i].x, props.path[i].y)
+      ctx.lineTo(cx, cy)
+    }
+    ctx.stroke()
   }
 
   // текущая позиция
@@ -90,6 +106,7 @@ onMounted(draw)
 // следим за изменениями
 watch(() => props.beacons, draw, { deep: true })
 watch(() => props.position, draw, { deep: true })
+watch(() => props.path, draw, { deep: true })
 </script>
 
 <template lang="pug">

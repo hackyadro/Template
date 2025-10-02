@@ -39,8 +39,13 @@ def main_loop():
             if len(points) >= 3:
                 result = trilaterator.trilaterate_improved(points, rssi_values, dt=WINDOW_SEC)
 
+
                 # сохраняем последнюю позицию для API
-                state.save_last_position(result)
+                try:
+                    state.save_last_position(result)
+                except Exception as e:
+                    print("Ошибка при сохранении позиции:", e)
+            
 
                 print("=== Позиция ===")
                 print(f"Координаты: ({result['x']:.2f}, {result['y']:.2f})")

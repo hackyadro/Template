@@ -10,11 +10,11 @@ from umqtt.simple import MQTTClient
 # ---------- CONFIG ----------
 WIFI_SSID   = "CR7"
 WIFI_PASS   = "12345678"
-MQTT_SERVER = "10.49.206.215"   # IP/домен брокера
+MQTT_SERVER = "10.49.206.215" # IP/домен брокера
 MQTT_PORT   = 1883
 MQTT_TOPIC  = b"beacons"
 KEEPALIVE_S = 60
-FILTER_PREFIX = "beacon_"       # публикуем только имена с этим префиксом
+FILTER_PREFIX = "beacon_" # публикуем только имена с этим префиксом
 
 # BLE IRQ constants
 _IRQ_SCAN_RESULT = 5
@@ -39,7 +39,6 @@ ok = wifi_connect()
 print("WiFi:", "OK" if ok else "FAIL", wlan.ifconfig() if ok else "")
 
 # ---------- MQTT ----------
-# ВАЖНО: client_id должен быть читаемым ASCII (UTF-8), а не «сырой бинарник»
 client_id = b"esp32s3-" + ubinascii.hexlify(machine.unique_id())
 client = MQTTClient(client_id, MQTT_SERVER, port=MQTT_PORT, keepalive=KEEPALIVE_S)
 
@@ -50,13 +49,13 @@ def tcp_preflight(host, port, timeout_s=5):
         s.settimeout(timeout_s)
         s.connect(addr)
         s.close()
-        return True # Ronaldo
+        return True # Ronaldo7 SIUUUUU
     except Exception as e:
         print("TCP preflight failed:", e)
         return False
 
 def mqtt_connect(retries=3):
-    # Проверяем, что порт достигнут
+    # Проверяем, что порт доступен
     if not tcp_preflight(MQTT_SERVER, MQTT_PORT):
         return False
     for i in range(retries):

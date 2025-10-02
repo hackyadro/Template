@@ -10,7 +10,7 @@ PROJECT_ROOT = os.path.dirname(BASE_DIR)
 MQTT_SERVER = "10.49.206.215"
 MQTT_PORT = 1883
 MQTT_TOPIC = "beacons/#"
-WINDOW_SEC = 1.0  # окно сбора данных (сек)
+WINDOW_SEC = 0.4  # окно сбора данных (сек)
 
 # Полный путь к файлу маяков (в корне проекта)
 BEACONS_FILE = os.path.join(PROJECT_ROOT, "standart.beacons")

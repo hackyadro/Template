@@ -2,8 +2,8 @@ import json
 import os
 from typing import Any, Optional
 
-# Можно переопределить путём переменной окружения STATE_FILE
-STATE_FILE = os.path.abspath(os.environ.get("STATE_FILE", "state.json"))
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+STATE_FILE = os.path.join(BASE_DIR, "state.json")
 
 def save_last_position(position: dict) -> None:
     """
