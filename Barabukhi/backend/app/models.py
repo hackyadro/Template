@@ -3,7 +3,7 @@ from typing import Optional, List
 from pydantic import BaseModel, Field
 
 
-# ==================== PHP API Models (сохраняем совместимость) ====================
+# ==================== DEVICE API Models (BLE устройства) ====================
 
 class MacRequest(BaseModel):
     """Запрос с MAC адресом"""
@@ -95,6 +95,7 @@ class DeviceCreateRequest(BaseModel):
     mac: str = Field(..., pattern=r'^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$')
     map_id: Optional[int] = None
     poll_frequency: float = 1.0
+    write_road: bool = True
     color: str = '#3b82f6'
 
 
@@ -103,6 +104,7 @@ class DeviceUpdateRequest(BaseModel):
     name: Optional[str] = None
     map_id: Optional[int] = None
     poll_frequency: Optional[float] = None
+    write_road: Optional[bool] = None
     color: Optional[str] = None
 
 
@@ -113,6 +115,7 @@ class DeviceResponse(BaseModel):
     mac: str
     map_id: Optional[int]
     poll_frequency: float
+    write_road: bool
     color: str
     created_at: datetime
     updated_at: datetime

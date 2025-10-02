@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS devices (
     mac VARCHAR(17) UNIQUE NOT NULL,
     map_id INTEGER REFERENCES maps(id) ON DELETE SET NULL,
     poll_frequency DECIMAL(5, 2) DEFAULT 1.0, -- Гц
+    write_road BOOLEAN DEFAULT true, -- Записывать ли маршрут устройства
     color VARCHAR(7) DEFAULT '#3b82f6',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -102,12 +103,11 @@ BEGIN
         VALUES (NEW.id, 'freq', false);
     END IF;
 
-    -- Для статуса (write_road) всегда false в текущей версии,
-    -- но оставим возможность для будущего
-    -- IF (OLD.some_status_field IS DISTINCT FROM NEW.some_status_field) THEN
-    --     INSERT INTO device_changes (device_id, change_type, is_notified)
-    --     VALUES (NEW.id, 'status', false);
-    -- END IF;
+    -- Проверяем изменение статуса записи маршрута (write_road)
+    IF (OLD.write_road IS DISTINCT FROM NEW.write_road) THEN
+        INSERT INTO device_changes (device_id, change_type, is_notified)
+        VALUES (NEW.id, 'status', false);
+    END IF;
 
     RETURN NEW;
 END;
@@ -143,7 +143,7 @@ BEGIN
 END $$;
 
 -- Вставляем тестовое устройство
-INSERT INTO devices (name, mac, map_id, poll_frequency, color)
-SELECT 'Test Device', '00:11:22:33:44:55', id, 1.0, '#ef4444'
+INSERT INTO devices (name, mac, map_id, poll_frequency, write_road, color)
+SELECT 'Test Device', '00:11:22:33:44:55', id, 1.0, true, '#ef4444'
 FROM maps WHERE name = 'office_floor_1'
 ON CONFLICT (mac) DO NOTHING;

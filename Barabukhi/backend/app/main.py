@@ -3,10 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from typing import List
+import time
 
 from app.database import get_db
 from app.models import (
-    # Client API models
+    # Device API models (BLE devices)
     MacRequest, FreqResponse, StatusRoadResponse, MapResponse,
     PingResponse, SendSignalRequest, SendSignalResponse,
     # Frontend API models
@@ -38,7 +39,7 @@ async def root():
         "message": "Indoor Navigation API",
         "version": "2.0.0",
         "endpoints": {
-            "php_api": ["/get_freq", "/get_status_road", "/get_map", "/ping", "/send_signal"],
+            "device_api": ["/get_freq", "/get_status_road", "/get_map", "/ping", "/send_signal"],
             "frontend_api": ["/api/maps", "/api/devices", "/api/position", "/api/path"]
         }
     }
@@ -81,8 +82,8 @@ async def get_or_create_device(mac: str, db: AsyncSession) -> int:
 
     insert_result = await db.execute(
         text("""
-            INSERT INTO devices (name, mac, map_id, poll_frequency, color)
-            VALUES (:name, :mac, :map_id, :poll_frequency, :color)
+            INSERT INTO devices (name, mac, map_id, poll_frequency, write_road, color)
+            VALUES (:name, :mac, :map_id, :poll_frequency, :write_road, :color)
             RETURNING id
         """),
         {
@@ -90,6 +91,7 @@ async def get_or_create_device(mac: str, db: AsyncSession) -> int:
             "mac": mac,
             "map_id": map_id,
             "poll_frequency": 1.0,
+            "write_road": True,
             "color": "#3b82f6"
         }
     )
@@ -97,7 +99,7 @@ async def get_or_create_device(mac: str, db: AsyncSession) -> int:
     return insert_result.scalar()
 
 
-# ==================== PHP CLIENT API (совместимость) ====================
+# ==================== DEVICE API (BLE устройства) ====================
 
 @app.post("/get_freq", response_model=FreqResponse)
 async def get_freq(request: MacRequest, db: AsyncSession = Depends(get_db)):
@@ -118,12 +120,18 @@ async def get_freq(request: MacRequest, db: AsyncSession = Depends(get_db)):
 
 @app.post("/get_status_road", response_model=StatusRoadResponse)
 async def get_status_road(request: MacRequest, db: AsyncSession = Depends(get_db)):
-    """Получить статус записи маршрута (всегда True для фронтенда)"""
+    """Получить статус записи маршрута для устройства"""
     # Автоматически создаём устройство если не существует
     await get_or_create_device(request.mac, db)
 
-    # Фронтенд всегда сохраняет позиции
-    return StatusRoadResponse(write_road=True)
+    # Получаем статус записи маршрута для устройства
+    result = await db.execute(
+        text("SELECT write_road FROM devices WHERE mac = :mac"),
+        {"mac": request.mac}
+    )
+    device = result.first()
+
+    return StatusRoadResponse(write_road=device.write_road)
 
 
 @app.post("/get_map", response_model=MapResponse)
@@ -175,6 +183,8 @@ async def ping(request: MacRequest, db: AsyncSession = Depends(get_db)):
     Проверить наличие изменений для клиента.
     Возвращает список необработанных изменений и помечает их как отправленные.
     """
+    start_time = time.time()
+
     # Автоматически создаём устройство если не существует
     device_id = await get_or_create_device(request.mac, db)
 
@@ -192,6 +202,8 @@ async def ping(request: MacRequest, db: AsyncSession = Depends(get_db)):
 
     if not changes:
         # Нет изменений
+        elapsed_ms = (time.time() - start_time) * 1000
+        print(f"Ping processed in {elapsed_ms:.2f} ms (no changes)")
         return PingResponse(change=False, change_list=[])
 
     # Формируем список изменений
@@ -208,6 +220,8 @@ async def ping(request: MacRequest, db: AsyncSession = Depends(get_db)):
     )
     await db.commit()
 
+    elapsed_ms = (time.time() - start_time) * 1000
+    print(f"Ping processed in {elapsed_ms:.2f} ms (changes: {change_list})")
     return PingResponse(change=True, change_list=change_list)
 
 
@@ -218,7 +232,7 @@ async def send_signal(request: SendSignalRequest, db: AsyncSession = Depends(get
     """
     # Получаем или создаём устройство
     result = await db.execute(
-        text("SELECT id, map_id FROM devices WHERE mac = :mac"),
+        text("SELECT id, map_id, write_road FROM devices WHERE mac = :mac"),
         {"mac": request.mac}
     )
     device = result.first()
@@ -243,17 +257,19 @@ async def send_signal(request: SendSignalRequest, db: AsyncSession = Depends(get
 
         device_insert = await db.execute(
             text("""
-                INSERT INTO devices (name, mac, map_id)
-                VALUES (:name, :mac, :map_id)
+                INSERT INTO devices (name, mac, map_id, write_road)
+                VALUES (:name, :mac, :map_id, :write_road)
                 RETURNING id
             """),
-            {"name": f"Device_{request.mac}", "mac": request.mac, "map_id": map_id}
+            {"name": f"Device_{request.mac}", "mac": request.mac, "map_id": map_id, "write_road": True}
         )
         device_id = device_insert.scalar()
+        write_road = True
         await db.commit()
     else:
         device_id = device.id
         map_id = device.map_id
+        write_road = device.write_road
 
     # Сохраняем измерения сигналов
     for signal in request.list:
@@ -291,21 +307,22 @@ async def send_signal(request: SendSignalRequest, db: AsyncSession = Depends(get
     if position_data:
         x, y, accuracy, algorithm = position_data
 
-        # Всегда сохраняем вычисленную позицию (для фронтенда)
-        await db.execute(
-            text("""
-                INSERT INTO positions (device_id, map_id, x_coordinate, y_coordinate, accuracy, algorithm)
-                VALUES (:device_id, :map_id, :x, :y, :accuracy, :algorithm)
-            """),
-            {
-                "device_id": device_id,
-                "map_id": map_id,
-                "x": x,
-                "y": y,
-                "accuracy": accuracy,
-                "algorithm": algorithm
-            }
-        )
+        # Сохраняем позицию только если write_road = True
+        if write_road:
+            await db.execute(
+                text("""
+                    INSERT INTO positions (device_id, map_id, x_coordinate, y_coordinate, accuracy, algorithm)
+                    VALUES (:device_id, :map_id, :x, :y, :accuracy, :algorithm)
+                """),
+                {
+                    "device_id": device_id,
+                    "map_id": map_id,
+                    "x": x,
+                    "y": y,
+                    "accuracy": accuracy,
+                    "algorithm": algorithm
+                }
+            )
 
     await db.commit()
     return SendSignalResponse(accept=True)
@@ -421,7 +438,7 @@ async def get_devices(db: AsyncSession = Depends(get_db)):
     """Получить список всех устройств"""
     result = await db.execute(
         text("""
-            SELECT id, name, mac, map_id, poll_frequency, color, created_at, updated_at
+            SELECT id, name, mac, map_id, poll_frequency, write_road, color, created_at, updated_at
             FROM devices
             ORDER BY created_at DESC
         """)
@@ -435,6 +452,7 @@ async def get_devices(db: AsyncSession = Depends(get_db)):
             mac=d.mac,
             map_id=d.map_id,
             poll_frequency=float(d.poll_frequency),
+            write_road=d.write_road,
             color=d.color,
             created_at=d.created_at,
             updated_at=d.updated_at
@@ -448,15 +466,16 @@ async def create_device(device: DeviceCreateRequest, db: AsyncSession = Depends(
     """Создать новое устройство"""
     result = await db.execute(
         text("""
-            INSERT INTO devices (name, mac, map_id, poll_frequency, color)
-            VALUES (:name, :mac, :map_id, :poll_frequency, :color)
-            RETURNING id, name, mac, map_id, poll_frequency, color, created_at, updated_at
+            INSERT INTO devices (name, mac, map_id, poll_frequency, write_road, color)
+            VALUES (:name, :mac, :map_id, :poll_frequency, :write_road, :color)
+            RETURNING id, name, mac, map_id, poll_frequency, write_road, color, created_at, updated_at
         """),
         {
             "name": device.name,
             "mac": device.mac,
             "map_id": device.map_id,
             "poll_frequency": device.poll_frequency,
+            "write_road": device.write_road,
             "color": device.color
         }
     )
@@ -469,6 +488,7 @@ async def create_device(device: DeviceCreateRequest, db: AsyncSession = Depends(
         mac=d.mac,
         map_id=d.map_id,
         poll_frequency=float(d.poll_frequency),
+        write_road=d.write_road,
         color=d.color,
         created_at=d.created_at,
         updated_at=d.updated_at
@@ -502,6 +522,10 @@ async def update_device(device_id: int, device: DeviceUpdateRequest, db: AsyncSe
         update_fields.append("poll_frequency = :poll_frequency")
         params["poll_frequency"] = device.poll_frequency
 
+    if device.write_road is not None:
+        update_fields.append("write_road = :write_road")
+        params["write_road"] = device.write_road
+
     if device.color is not None:
         update_fields.append("color = :color")
         params["color"] = device.color
@@ -510,7 +534,7 @@ async def update_device(device_id: int, device: DeviceUpdateRequest, db: AsyncSe
         # Если ничего не передано, просто возвращаем текущее устройство
         result = await db.execute(
             text("""
-                SELECT id, name, mac, map_id, poll_frequency, color, created_at, updated_at
+                SELECT id, name, mac, map_id, poll_frequency, write_road, color, created_at, updated_at
                 FROM devices
                 WHERE id = :device_id
             """),
@@ -523,6 +547,7 @@ async def update_device(device_id: int, device: DeviceUpdateRequest, db: AsyncSe
             mac=d.mac,
             map_id=d.map_id,
             poll_frequency=float(d.poll_frequency),
+            write_road=d.write_road,
             color=d.color,
             created_at=d.created_at,
             updated_at=d.updated_at
@@ -533,7 +558,7 @@ async def update_device(device_id: int, device: DeviceUpdateRequest, db: AsyncSe
         UPDATE devices
         SET {', '.join(update_fields)}
         WHERE id = :device_id
-        RETURNING id, name, mac, map_id, poll_frequency, color, created_at, updated_at
+        RETURNING id, name, mac, map_id, poll_frequency, write_road, color, created_at, updated_at
     """
 
     result = await db.execute(text(update_sql), params)
@@ -546,6 +571,7 @@ async def update_device(device_id: int, device: DeviceUpdateRequest, db: AsyncSe
         mac=d.mac,
         map_id=d.map_id,
         poll_frequency=float(d.poll_frequency),
+        write_road=d.write_road,
         color=d.color,
         created_at=d.created_at,
         updated_at=d.updated_at
