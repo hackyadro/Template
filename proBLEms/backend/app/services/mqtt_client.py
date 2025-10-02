@@ -37,7 +37,6 @@ class MQTTClient:
             self.is_connected = True
             print("[MQTT] Connected")
             client.subscribe(MQTT_CONFIG["topic_scan"])
-            client.subscribe(MQTT_CONFIG["topic_control"])
         else:
             print(f"[MQTT] Connection failed with code {rc}")
 
