@@ -27,11 +27,12 @@ async def stop_session(req: StopSessionRequest, sm: SessionManager = Depends(
     return await sm.stop_session(req.sessionId)
 
 
-# @router.post("/path/save")
-# def save_path(req: SavePathRequest, sm: SessionManager = Depends(get_session_manager)) -> Dict[str, Any]:
-#     return sm.save_session_path(req.sessionId, req.fileName)
-#
-#
+@router.post("/path/save")
+def save_path(req: SavePathRequest, sm: SessionManager = Depends(
+        get_session_manager)) -> Dict[str, Any]:
+    return sm.save_session_path(req.sessionId, req.fileName)
+
+
 # @router.post("/scan/data")
 # def scan_data(data: ScannerData, sm: SessionManager = Depends(get_session_manager)) -> Dict[str, Any]:
 #     return sm.process_scan_data(data.model_dump())
@@ -57,6 +58,12 @@ async def ws_endpoint(websocket: WebSocket,
                       sm: SessionManager = Depends(get_session_manager)):
     await websocket.accept()
     session_id = None
+
+    if not sm.active_session:
+        await websocket.send_json({"type": "error",
+                                   "message": "no active session"})
+        return
+
     try:
         # ждём команду subscribe
         data = await websocket.receive_json()

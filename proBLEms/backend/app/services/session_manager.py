@@ -23,6 +23,7 @@ class SessionManager:
     def __init__(self, loop: Optional[
             asyncio.AbstractEventLoop] = None):
         self.mqtt_client = None
+        self.tracking_started = False
         self.active_session: Dict[str, Any] = {}
         self.websocket_connections: List[WebSocket] = []
         self.positioning = PositioningService()
@@ -92,6 +93,7 @@ class SessionManager:
             conns = self.websocket_connections.copy()
             self.active_session.clear()
             self.websocket_connections.clear()
+            self.tracking_started = False
         if not session:
             return {"status": "error", "message": "Session not found"}
 
@@ -114,7 +116,7 @@ class SessionManager:
 
     def process_scan_data(self, scan_data: Dict[str, Any]) -> Dict[str, Any]:
         """Обрабатывает данные от сканера, вычисляет позицию и рассылает WS"""
-        if not self.active_session:
+        if not self.tracking_started:
             return {"status": "processed"}
 
         try:
@@ -154,18 +156,20 @@ class SessionManager:
             return {"status": "error",
                     "message": f"Position calculation failed: {e}"}
 
-    # def save_session_path(self, session_id: str, filename: str) -> Dict[str, Any]:
-    #     """Сохраняет маршрут сессии в файл"""
-    #     with self._lock:
-    #         session = self.active_sessions.get(session_id)
-    #     if not session:
-    #         return {"status": "error", "message": "Session not found"}
-    #
-    #     try:
-    #         file_path = self.config_loader.save_path_to_file(session["positions"], filename, session_id)
-    #         return {"status": "saved", "file_path": str(file_path), "points_count": len(session["positions"])}
-    #     except Exception as e:
-    #         return {"status": "error", "message": f"Failed to save path: {e}"}
+    def save_session_path(self, session_id: str, filename: str) \
+            -> Dict[str, Any]:
+        """Сохраняет маршрут сессии в файл"""
+        if not self.active_session:
+            return {"status": "error", "message": "Session not found"}
+
+        try:
+            file_path = self.config_loader.save_path_to_file(
+                self.active_session["positions"], filename, session_id)
+            return {"status": "saved",
+                    "file_path": str(file_path),
+                    "points_count": len(self.active_session["positions"])}
+        except Exception as e:
+            return {"status": "error", "message": f"Failed to save path: {e}"}
 
     # def get_session_info(self, session_id: str) -> Optional[Dict[str, Any]]:
     #     with self._lock:
@@ -181,6 +185,7 @@ class SessionManager:
     #     }
 
     def add_websocket_connection(self, session_id: str, websocket: WebSocket):
+        self.tracking_started = True
         with self._lock:
             self.websocket_connections.append(websocket)
 

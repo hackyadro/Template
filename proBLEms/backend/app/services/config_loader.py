@@ -61,22 +61,22 @@ class ConfigLoader:
             print(f"Warning: Failed to parse beacon row {row}: {e}")
             return None
 
-    def save_path_to_file(self, positions: List[Dict[str, Any]], filename: str, session_id: str):
+    def save_path_to_file(self, positions: List[Dict[str, Any]],
+                          filename: str, session_id: str):
         """Сохраняет маршрут в .path файл"""
-        paths_dir = Path("data/paths")
+        paths_dir = Path(f"data/paths/{session_id}")
         paths_dir.mkdir(parents=True, exist_ok=True)
 
-        path_data = {
-            "sessionId": session_id,
-            "startTime": positions[0]["timestamp"] if positions else 0,
-            "endTime": positions[-1]["timestamp"] if positions else 0,
-            "points": [
-                {"x": p["x"], "y": p["y"], "t": p.get("timestamp", 0)} for p in positions
-            ],
-        }
+        xy_data = [
+            {key.upper(): item[key] for key in ['x', 'y'] if key in item}
+            for item in positions
+        ]
 
+        fieldnames = ['X', 'Y']
         file_path = paths_dir / f"{filename}.path"
         with file_path.open("w", encoding="utf-8") as f:
-            json.dump(path_data, f, indent=2, ensure_ascii=False)
+            writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter=';')
+            writer.writeheader()
+            writer.writerows(xy_data)
 
         return file_path
