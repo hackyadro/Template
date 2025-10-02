@@ -30,7 +30,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - .:/app
+      - ./backend:/app
     restart: unless-stopped
 
   frontend:
