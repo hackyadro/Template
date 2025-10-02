@@ -201,9 +201,6 @@ async def ping(request: MacRequest, db: AsyncSession = Depends(get_db)):
     changes = changes_result.fetchall()
 
     if not changes:
-        # Нет изменений
-        elapsed_ms = (time.time() - start_time) * 1000
-        print(f"Ping processed in {elapsed_ms:.2f} ms (no changes)")
         return PingResponse(change=False, change_list=[])
 
     # Формируем список изменений
