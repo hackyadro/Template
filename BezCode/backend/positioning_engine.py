@@ -14,6 +14,7 @@ class PositioningEngine:
         
         self.beacon_positions = self.load_beacon_positions()
         print(f"✅ Positioning Engine initialized with {len(self.beacon_positions)} beacon positions")
+        print(f"📋 Available beacons: {list(self.beacon_positions.keys())}")
     
     def load_beacon_positions(self):
         """Загружает позиции маяков из файла standart.beacons"""
@@ -40,9 +41,9 @@ class PositioningEngine:
                             parts = line.split(';')
                             if len(parts) == 3:
                                 name, x, y = parts
-                                beacon_positions[name] = {
-                                    'x': float(x),
-                                    'y': float(y)
+                                beacon_positions[name.strip()] = {
+                                    'x': float(x.strip()),
+                                    'y': float(y.strip())
                                 }
                                 print(f"📌 Loaded beacon: {name} -> ({x}, {y})")
 
@@ -53,7 +54,6 @@ class PositioningEngine:
         
         return beacon_positions
     
-    
     def on_connect(self, client, userdata, flags, rc):
         print(f"✅ Positioning Engine Connected to MQTT Broker with code: {rc}")
         client.subscribe("ble/beacons/raw")
@@ -63,38 +63,45 @@ class PositioningEngine:
         if msg.topic == "ble/beacons/raw":
             try:
                 payload = json.loads(msg.payload.decode())
-                beacons = payload.get("beacons", [])
+                print(f"📡 Received MQTT payload: {payload}")
                 
-                print(f"📡 Received {len(beacons)} raw beacons")
+                # Обрабатываем новый формат: {"beacon_1": -45, "beacon_2": -50, ...}
+                beacons_data = []
                 
-                # Добавляем позиции к данным маяков
-                beacons_with_positions = []
-                for beacon in beacons:
-                    beacon_name = beacon.get("name")
+                for beacon_name, rssi in payload.items():
                     if beacon_name in self.beacon_positions:
-                        beacon_with_position = beacon.copy()
-                        beacon_with_position["position"] = self.beacon_positions[beacon_name]
-                        beacons_with_positions.append(beacon_with_position)
+                        beacon_data = {
+                            "name": beacon_name,
+                            "rssi": rssi,
+                            "position": self.beacon_positions[beacon_name]
+                        }
+                        beacons_data.append(beacon_data)
+                        print(f"📍 Mapped {beacon_name}: RSSI {rssi} -> Position ({beacon_data['position']['x']}, {beacon_data['position']['y']})")
                     else:
-                        print(f"⚠️ Unknown beacon name: {beacon_name}")
+                        print(f"⚠️ Unknown beacon name in payload: {beacon_name}")
                 
-                if len(beacons_with_positions) >= 3:
-                    position, used_beacons = self.trilateration.calculate_position(beacons_with_positions)
+                print(f"📍 Total beacons with known positions: {len(beacons_data)}")
+                
+                if len(beacons_data) >= 3:
+                    position, used_beacons = self.trilateration.calculate_position(beacons_data)
+
+                    print(f"📍 Position: {position}")
+                    print(f"📍 Used beacons: {used_beacons}")
                     
                     if position:
                         position['timestamp'] = time.time()
                         # Сглаживание
-                        smoothed_x = (
-                            self._smoothing_alpha * position['x'] +
-                            (1 - self._smoothing_alpha) * self.current_position['x']
-                        )
-                        smoothed_y = (
-                            self._smoothing_alpha * position['y'] +
-                            (1 - self._smoothing_alpha) * self.current_position['y']
-                        )
+                        # smoothed_x = (
+                        #     self._smoothing_alpha * position['x'] +
+                        #     (1 - self._smoothing_alpha) * self.current_position['x']
+                        # )
+                        # smoothed_y = (
+                        #     self._smoothing_alpha * position['y'] +
+                        #     (1 - self._smoothing_alpha) * self.current_position['y']
+                        # )
                         self.current_position = {
-                            "x": round(smoothed_x, 2), 
-                            "y": round(smoothed_y, 2), 
+                            "x": round(position['x'], 2), 
+                            "y": round(position['y'], 2), 
                             "timestamp": position['timestamp']
                         }
                         self.used_beacons = used_beacons
@@ -102,10 +109,12 @@ class PositioningEngine:
                     else:
                         print("❌ Trilateration calculation failed")
                 else:
-                    print(f"⚠️ Not enough beacons for positioning: {len(beacons_with_positions)}/3")
+                    print(f"⚠️ Not enough beacons for positioning: {len(beacons_data)}/3")
                     
             except Exception as e:
                 print(f"❌ Error in on_message: {e}")
+                import traceback
+                traceback.print_exc()
 
     def publish_position(self, position, used_beacons):
         """Публикует позицию и информацию о использованных маяках"""
