@@ -1,9 +1,23 @@
+# .dockerignore (в корне)
+.git
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-*.DS_Store
-.env
+*.log
+
+# локальные окружения
 .venv/
-.git/
-.idea/
+.env
+.env*/
+
+# артефакты/сборка
+dist/
+build/
+*.egg-info/
+
+# большие/временные данные (если не нужны в образе)
+app/paths/
+app/telemetry_*.csv
+app/telemetry_log.csv
+app/telemetry_storage.csv
