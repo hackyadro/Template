@@ -6,6 +6,7 @@ import asyncio
 from typing import Dict, Any
 import logging
 from datetime import datetime
+import os
 
 from mqtt_client import MQTTClient
 from models import MessageModel, DeviceStatus, MQTTMessage
@@ -26,15 +27,51 @@ async def lifespan(app: FastAPI):
     
     # Startup
     logger.info("Starting FastAPI application with MQTT integration")
+
+    # Read MQTT configuration directly from environment variables (no settings class)
+    def _env_int(name: str, default: int) -> int:
+        v = os.getenv(name)
+        try:
+            return int(v) if v is not None else default
+        except ValueError:
+            logger.warning(f"Invalid int for {name}: {v}, using default {default}")
+            return default
+
+    broker_host = os.getenv("MQTT_BROKER_HOST", "localhost")
+    broker_port = _env_int("MQTT_BROKER_PORT", 1883)
+    broker_port_safe = _env_int("MQTT_BROKER_PORT_SAFE", 8883)
+
+    use_tls_env = os.getenv("MQTT_USE_TLS")
+    if use_tls_env is not None:
+        use_tls = use_tls_env.strip().lower() in ("1", "true", "yes", "on")
+    else:
+        # If USE_TLS not provided, infer from presence of certs
+        cert_file = os.getenv("MQTT_CERT_FILE_PATH")
+        key_file = os.getenv("MQTT_KEY_FILE_PATH")
+        use_tls = bool(cert_file and key_file)
+
+    # Choose appropriate port based on TLS usage
+    broker_port_final = broker_port_safe if use_tls else broker_port
+
+    username = os.getenv("MQTT_USERNAME")
+    password = os.getenv("MQTT_PASSWORD")
+    ca_cert_path = os.getenv("MQTT_CA_CERT_PATH")
+    cert_file_path = os.getenv("MQTT_CERT_FILE_PATH")
+    key_file_path = os.getenv("MQTT_KEY_FILE_PATH")
+
+    logger.info(
+        f"MQTT config - host: {broker_host}, port: {broker_port_final}, use_tls: {use_tls}, username: {'set' if username else 'unset'}"
+    )
+
     mqtt_client = MQTTClient(
-        broker_host=settings.MQTT_BROKER_HOST,
-        broker_port=settings.MQTT_BROKER_PORT,
-        username=settings.MQTT_USERNAME,
-        password=settings.MQTT_PASSWORD,
-        use_tls=settings.MQTT_USE_TLS,
-        ca_cert_path=settings.MQTT_CA_CERT_PATH,
-        cert_file_path=settings.MQTT_CERT_FILE_PATH,
-        key_file_path=settings.MQTT_KEY_FILE_PATH
+        broker_host=broker_host,
+        broker_port=broker_port_final,
+        username=username,
+        password=password,
+        use_tls=use_tls,
+        ca_cert_path=ca_cert_path,
+        cert_file_path=cert_file_path,
+        key_file_path=key_file_path
     )
     
     # Connect to MQTT broker
@@ -68,10 +105,17 @@ app.include_router(router)
 if mqtt_client:
     set_mqtt_client(mqtt_client)
 
+# Read allowed origins from env (comma-separated) with sensible defaults
+_allowed = os.getenv("ALLOWED_ORIGINS")
+if _allowed:
+    allowed_origins = [s.strip() for s in _allowed.split(",") if s.strip()]
+else:
+    allowed_origins = ["http://localhost:3000", "http://localhost:8080"]
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS,
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -158,11 +202,34 @@ async def get_device_status():
     }
 
 if __name__ == "__main__":
+    # Read server run configuration directly from environment
+    api_host = os.getenv("API_HOST", "0.0.0.0")
+    try:
+        api_port = int(os.getenv("API_PORT", "8000"))
+    except ValueError:
+        api_port = 8000
+
+    debug_env = os.getenv("DEBUG", None)
+    if debug_env is not None:
+        debug_flag = debug_env.strip().lower() in ("1", "true", "yes", "on")
+    else:
+        # fallback to settings.DEBUG if present, else False
+        debug_flag = getattr(settings, "DEBUG", False)
+
+    use_ssl_env = os.getenv("USE_SSL", None)
+    if use_ssl_env is not None:
+        use_ssl = use_ssl_env.strip().lower() in ("1", "true", "yes", "on")
+    else:
+        use_ssl = getattr(settings, "USE_SSL", False)
+
+    ssl_keyfile = os.getenv("SSL_KEY_FILE", None) if use_ssl else None
+    ssl_certfile = os.getenv("SSL_CERT_FILE", None) if use_ssl else None
+
     uvicorn.run(
         "main:app",
-        host=settings.API_HOST,
-        port=settings.API_PORT,
-        reload=settings.DEBUG,
-        ssl_keyfile=settings.SSL_KEY_FILE if settings.USE_SSL else None,
-        ssl_certfile=settings.SSL_CERT_FILE if settings.USE_SSL else None
+        host=api_host,
+        port=api_port,
+        reload=debug_flag,
+        ssl_keyfile=ssl_keyfile,
+        ssl_certfile=ssl_certfile
     )

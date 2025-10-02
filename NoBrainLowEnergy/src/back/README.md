@@ -1,8 +1,6 @@
 # NoBrainLowEnergy FastAPI Backend
 
-A high-performance REST API backend server built with FastAPI, integrated with MQTT broker and TLS encryption support.
-
-## Features
+<!-- ## Features
 
 - **FastAPI Framework**: Modern, fast, and async web framework
 - **MQTT Integration**: Secure communication with MQTT broker using TLS
@@ -11,7 +9,7 @@ A high-performance REST API backend server built with FastAPI, integrated with M
 - **Auto-generated Documentation**: Interactive API docs with Swagger UI
 - **Docker Support**: Containerized deployment with Docker Compose
 - **Async Architecture**: High-performance asynchronous operations
-- **Type Safety**: Full type hints and Pydantic models for data validation
+- **Type Safety**: Full type hints and Pydantic models for data validation -->
 
 ## Quick Start
 
@@ -19,7 +17,7 @@ A high-performance REST API backend server built with FastAPI, integrated with M
 
 - Python 3.8 or higher
 - OpenSSL (for certificate generation)
-- MQTT Broker (Mosquitto recommended)
+- MQTT Broker Mosquitto
 
 ### Installation
 
@@ -50,6 +48,7 @@ A high-performance REST API backend server built with FastAPI, integrated with M
    ```
 
 The API will be available at:
+- HTTPS: `https://localhost:8000`
 - HTTP: `http://localhost:8000`
 - API Documentation: `http://localhost:8000/docs`
 - Alternative docs: `http://localhost:8000/redoc`

@@ -1,52 +1,26 @@
 from pydantic_settings import BaseSettings
 from typing import List
-import os
 
 class Settings(BaseSettings):
-    """Application settings"""
+    """Application settings (only internal defaults - no env-driven connection data)"""
     
-    # API Settings
-    API_HOST: str = "0.0.0.0"
-    API_PORT: int = 8000
-    DEBUG: bool = True
+    # Application-internal defaults (not read from env by other parts of the app)
+    DATABASE_URL: str = "sqlite:///./app.db"
+    LOG_LEVEL: str = "INFO"
     
-    # CORS Settings
-    ALLOWED_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:8080"]
-    
-    # SSL/TLS Settings for API
-    USE_SSL: bool = False
-    SSL_CERT_FILE: str = ""
-    SSL_KEY_FILE: str = ""
-    
-    # MQTT Broker Settings
-    MQTT_BROKER_HOST: str = "localhost"
-    MQTT_BROKER_PORT: int = 8883  # Default secure port
-    MQTT_USERNAME: str = ""
-    MQTT_PASSWORD: str = ""
-    MQTT_CLIENT_ID: str = "fastapi_backend"
-    
-    # MQTT TLS Settings
-    MQTT_USE_TLS: bool = True
-    MQTT_CA_CERT_PATH: str = "certs/ca.crt"
-    MQTT_CERT_FILE_PATH: str = "certs/client.crt"
-    MQTT_KEY_FILE_PATH: str = "certs/client.key"
-    MQTT_TLS_INSECURE: bool = False  # Set to True for self-signed certs
-    
-    # MQTT Topic Settings
+    # MQTT topic constants (logical names, not connection parameters)
     MQTT_BASE_TOPIC: str = "nobrainlowenergy"
     MQTT_DEVICE_TOPIC: str = "nobrainlowenergy/devices"
     MQTT_STATUS_TOPIC: str = "nobrainlowenergy/status"
     MQTT_COMMAND_TOPIC: str = "nobrainlowenergy/commands"
+    MQTT_CLIENT_ID: str = "nobrainlowenergy_backend"
     
-    # Database Settings (for future use)
-    DATABASE_URL: str = "sqlite:///./app.db"
-    
-    # Logging Settings
-    LOG_LEVEL: str = "INFO"
-    
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+    # In pydantic v2 / pydantic-settings, use model_config to allow/ignore extra env vars.
+    model_config = {
+        "env_file": ".env",
+        "case_sensitive": True,
+        "extra": "ignore",  # ignore env vars that are not declared on the model
+    }
 
 # Create global settings instance
 settings = Settings()

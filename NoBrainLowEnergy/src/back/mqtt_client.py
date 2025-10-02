@@ -5,12 +5,12 @@ import logging
 from typing import Dict, Any, List, Optional, Callable
 from datetime import datetime
 from collections import deque
+import os
 
 import paho.mqtt.client as mqtt
 from paho.mqtt.client import MQTTMessage
 
 from models import ReceivedMQTTMessage, QoSLevel
-from config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ class MQTTClient:
         self.broker_port = broker_port
         self.username = username
         self.password = password
-        self.client_id = client_id or settings.MQTT_CLIENT_ID
+        self.client_id = client_id or os.getenv("MQTT_CLIENT_ID", "fastapi_backend")
         self.use_tls = use_tls
         self.ca_cert_path = ca_cert_path
         self.cert_file_path = cert_file_path
