@@ -25,6 +25,7 @@ class AdvancedPositioningEngine:
 
     # Калибровочные данные для точки (0, 0)
     # MAC -> {'name': beacon_name, 'rssi': среднее_значение}
+    # TODO ты изначально должен как-то передать данные о положении маяков, распарсить и заполнить эту коллекцию
     CALIBRATION_MEASUREMENTS = {
         '88:57:21:23:34:CA': {'name': 'beacon_1', 'rssi': -63.3},
         '84:1F:E8:09:88:96': {'name': 'beacon_2', 'rssi': -57.9},
@@ -34,20 +35,9 @@ class AdvancedPositioningEngine:
         '88:57:21:23:3F:6E': {'name': 'beacon_6', 'rssi': -78.0},
         '4C:C3:82:C4:27:AA': {'name': 'beacon_7', 'rssi': -93.5},
     }
-
+    # TODO: если мы вдруг начинаем не с нуля, то нужно уметь изменить эту точку
+    # возможно на всякий ее передавать с инфой выше
     KNOWN_CALIBRATION_POINT = (0.0, 0.0)
-
-    # MAC-адреса маяков для маппинга beacon_name -> MAC
-    BEACON_MAC_MAP = {
-        'beacon_1': '88:57:21:23:34:CA',
-        'beacon_2': '84:1F:E8:09:88:96',
-        'beacon_3': '84:1F:E8:45:49:8E',
-        'beacon_4': '88:57:21:23:3D:D6',
-        'beacon_5': '88:57:21:23:50:46',
-        'beacon_6': '88:57:21:23:3F:6E',
-        'beacon_7': '4C:C3:82:C4:27:AA',
-        'beacon_8': '88:57:21:23:XX:XX',  # Заменить на реальный MAC
-    }
 
     def __init__(self):
         self.alpha = -59.0  # RSSI на 1м (будет калиброваться)
@@ -423,6 +413,8 @@ class AdvancedPositioningEngine:
         except Exception:
             return None
 
+    # TODO: здесь ты должен парсить именно так, как приходит сюда пакет
+    # если ты отправляешь инфу именно так, то ОК... ПРОСТО ПРОВЕРЬ
     @staticmethod
     def parse_report_block(block: str) -> Dict[str, Dict[str, float]]:
         """
