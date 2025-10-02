@@ -76,8 +76,30 @@ async def lifespan(app: FastAPI):
     # Connect to MQTT broker
     await mqtt_client.connect()
     
-    # Start MQTT client in background
+    # Start MQTT client network loop in background
     asyncio.create_task(mqtt_client.start())
+
+    # Wait for the MQTT connection to be fully established before subscribing
+    wait_timeout = float(os.getenv("MQTT_CONNECT_WAIT_TIMEOUT", "10"))
+    waited = 0.0
+    interval = 0.1
+    while not mqtt_client.is_connected() and waited < wait_timeout:
+        await asyncio.sleep(interval)
+        waited += interval
+
+    if not mqtt_client.is_connected():
+        logger.warning("MQTT connection not established within timeout; skipping auto-subscribe for now.")
+    else:
+        # Auto-subscribe to topics from environment variable
+        auto_subscribe_topics = os.getenv("MQTT_AUTO_SUBSCRIBE_TOPICS", "")
+        if auto_subscribe_topics:
+            topics = [t.strip() for t in auto_subscribe_topics.split(",") if t.strip()]
+            for topic in topics:
+                try:
+                    await mqtt_client.subscribe(topic)
+                    logger.info(f"Auto-subscribed to topic: {topic}")
+                except Exception as e:
+                    logger.error(f"Failed to auto-subscribe to {topic}: {e}")
     
     # Set MQTT client for routes
     set_mqtt_client(mqtt_client)

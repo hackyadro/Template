@@ -206,6 +206,7 @@ class MQTTClient:
             
             self.subscribed_topics.add(topic)
             logger.info(f"Subscribed to topic: {topic}")
+            print(f"Subscribed to topic: {topic}")
             
         except Exception as e:
             logger.error(f"Failed to subscribe to topic: {e}")
@@ -295,7 +296,7 @@ class MQTTClient:
                         logger.error(f"Error in message callback: {e}")
             
             logger.debug(f"Received message on topic: {msg.topic}")
-            print(f"Received message on topic: {msg.topic}")
+            print(f"Received message on topic LOL: {msg.payload}")
             
         except json.JSONDecodeError:
             logger.error(f"Failed to decode JSON payload from topic: {msg.topic}")
