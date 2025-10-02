@@ -81,7 +81,7 @@ class PositioningService:
         beacon_map = {b["id"]: b for b in beacons}
 
         # корректный ключ: beaconId
-        usable = [r for r in readings if r.get("beaconId") in beacon_map and "distance" in r]
+        usable = [r for r in readings if r["name"] in beacon_map]
         if len(usable) < 3:
             # взвешенный центроид по тому, что есть
             return self._centroid_fallback(usable, beacon_map)
@@ -94,10 +94,10 @@ class PositioningService:
 
         pts: List[Tuple[float, float]] = []
         dists: List[float] = []
-        for r in top:
-            b = beacon_map[r["beaconId"]]
-            pts.append((float(b["x"]), float(b["y"])))
-            dists.append(float(r["distance"]))
+        for reading in top:
+            beacon = beacon_map[reading["name"]]
+            pts.append((float(beacon["x"]), float(beacon["y"])))
+            dists.append(float(reading["distance"]))
 
         # Попробуем отбросить плохую геометрию: если 4 маяка дают «плоский» набор,
         # перейдём на лучшую тройку по качеству углов
@@ -117,8 +117,9 @@ class PositioningService:
 
     # ---------- математика ----------
 
-    def _choose_well_spread(self, pts: List[Tuple[float, float]],
-                             dists: List[float]) -> Tuple[List[Tuple[float, float]], List[float]]:
+    def _choose_well_spread(
+            self, pts: List[Tuple[float, float]], dists: List[float]
+    ) -> Tuple[List[Tuple[float, float]], List[float]]:
         """
         Выбираем 3–4 точки с «здоровыми» углами, избегаем почти коллинеарных троек.
         Если 4 — ок, иначе подбираем «лучшую» тройку по сумме углов ближе к 180°.
@@ -153,7 +154,8 @@ class PositioningService:
         return sel_pts, sel_d
 
     def _weighted_least_squares_trilateration(
-            self, pts: List[Tuple[float, float]], dists: List[float]) -> Tuple[float, float]:
+            self, pts: List[Tuple[float, float]], dists: List[float]
+    ) -> Tuple[float, float]:
         """
         Линеаризация «относительно опорного маяка» + ВЗВЕШЕННАЯ МНК (веса ~ 1/d^2).
         ВАЖНО: решение даёт абсолютные x,y — ничего «добавлять» к опорной точке не нужно.
