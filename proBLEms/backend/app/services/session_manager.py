@@ -1,3 +1,4 @@
+import math
 import uuid
 import time
 import json
@@ -134,6 +135,13 @@ class SessionManager:
             position = {"x": x_sm, "y": y_sm,
                         "accuracy": pos.get("accuracy", None), "timestamp": ts}
 
+            if len(self.active_session["positions"]) > 0:
+                prev_position = self.active_session["positions"][-1]
+                distance = math.hypot(position['x'] - prev_position['x'],
+                                      position['y'] - prev_position['y'])
+                if distance < 0.5:
+                    position = prev_position.copy()
+
             with self._lock:
                 self.active_session["positions"].append(position)
                 self.active_session["last_reading"] = \
@@ -151,7 +159,7 @@ class SessionManager:
 
             return {
                 "status": "processed",
-                "position": position,
+                "position": pos,
                 "session_points": len(self.active_session["positions"])
             }
 
