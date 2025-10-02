@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 
+const HOST_ADDRESS = "192.168.31.181:8000"
+
 // Типы
 interface Beacon {
   name: string;
@@ -51,11 +53,7 @@ const newDeviceColor = ref<string>('');
 // WebSocket: состояние и помощники
 const ws = ref<WebSocket | null>(null);
 const wsReady = ref(false);
-const backendWsUrl = ref<string>(
-  (typeof location !== 'undefined' && location.hostname)
-    ? `ws://${location.hostname}:8000/ws`
-    : 'ws://localhost:8000/ws'
-);
+const backendWsUrl = ref<string>(`ws://${HOST_ADDRESS}/ws`);
 
 type InMsg = { type: string; data: any };
 type OutMsg = { type: string; data: any };
@@ -100,6 +98,7 @@ const applyAllDevice = (data: any) => {
 };
 
 const applyListMap = (data: any) => {
+  console.log(data)
   const payload = data?.maps ?? [];
   const newMaps: Map[] = [];
   for (const m of payload) {
@@ -239,7 +238,6 @@ const saveMap = () => {
   };
   
   maps.value.push(newMap);
-  saveToLocalStorage();
   
   // Очистка формы
   newMapName.value = '';
@@ -265,44 +263,43 @@ const deleteMap = (mapId: string) => {
       d.mapId = null;
     }
   });
-  saveToLocalStorage();
 };
 
 // Получение позиции для устройства через REST API (если нужно polling без WebSocket)
-const fetchPositionFromServer = async (device: Device, map: Map | undefined): Promise<PathPoint | null> => {
-  try {
-    if (!map) return null;
+// const fetchPositionFromServer = async (device: Device, map: Map | undefined): Promise<PathPoint | null> => {
+//   try {
+//     if (!map) return null;
 
-    // Запрос позиции через REST API
-    const backendUrl = (typeof location !== 'undefined' && location.hostname)
-      ? `http://${location.hostname}:8000`
-      : 'http://localhost:8000';
+//     // Запрос позиции через REST API
+//     const backendUrl = (typeof location !== 'undefined' && location.hostname)
+//       ? `http://${location.hostname}:8000`
+//       : 'http://localhost:8000';
 
-    const response = await fetch(`${backendUrl}/api/position`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        mac: device.mac,
-        map_name: map.name
-      })
-    });
+//     const response = await fetch(`${backendUrl}/api/position`, {
+//       method: 'POST',
+//       headers: { 'Content-Type': 'application/json' },
+//       body: JSON.stringify({
+//         mac: device.mac,
+//         map_name: map.name
+//       })
+//     });
 
-    if (!response.ok) {
-      console.error('Position API error:', response.status);
-      return null;
-    }
+//     if (!response.ok) {
+//       console.error('Position API error:', response.status);
+//       return null;
+//     }
 
-    const data = await response.json();
-    return {
-      x: data.x,
-      y: data.y,
-      timestamp: new Date(data.timestamp)
-    };
-  } catch (error) {
-    console.error('Ошибка получения позиции:', error);
-    return null;
-  }
-};
+//     const data = await response.json();
+//     return {
+//       x: data.x,
+//       y: data.y,
+//       timestamp: new Date(data.timestamp)
+//     };
+//   } catch (error) {
+//     console.error('Ошибка получения позиции:', error);
+//     return null;
+//   }
+// };
 
 // Устройства: логика и помощьники
 const colorPalette = ['#ef4444', '#10b981', '#3b82f6', '#f59e0b', '#8b5cf6', '#14b8a6', '#f472b6', '#22c55e', '#e11d48', '#06b6d4'];
@@ -340,7 +337,6 @@ const addDevice = () => {
   newDeviceMapId.value = selectedMapId.value;
   newDeviceFrequency.value = 1;
   newDeviceColor.value = '';
-  saveToLocalStorage();
 };
 
 const removeDevice = (deviceId: string) => {
@@ -348,7 +344,6 @@ const removeDevice = (deviceId: string) => {
   if (!d) return;
   stopDevicePolling(deviceId);
   devices.value = devices.value.filter((x: Device) => x.id !== deviceId);
-  saveToLocalStorage();
 };
 
 const startDevicePolling = (deviceId: string) => {
@@ -405,12 +400,6 @@ const devicePathD = (device: Device) => {
     d += ` L ${transformX(device.path[i].x)} ${transformY(device.path[i].y)}`;
   }
   return d;
-};
-
-// LocalStorage
-const saveToLocalStorage = () => {
-  localStorage.setItem('indoor-locator-maps', JSON.stringify(maps.value));
-  localStorage.setItem('indoor-locator-devices', JSON.stringify(devices.value));
 };
 
 const loadFromLocalStorage = () => {
@@ -484,11 +473,6 @@ onUnmounted(() => {
     wsReady.value = false;
   }
 });
-
-// Сохраняем в localStorage при изменениях
-watch([maps, devices], () => {
-  saveToLocalStorage();
-}, { deep: true });
 
 // Перезапуск опроса устройства при изменении его частоты
 const updateDeviceFrequency = (device: Device, freq: number) => {
