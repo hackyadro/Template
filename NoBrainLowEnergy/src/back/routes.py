@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Query, Form, WebSocket, WebSocketDisconnect
-from typing import List, Optional, Annotated
+from typing import List, Optional, Annotated, Any, Dict
 from datetime import datetime, timedelta
 import asyncio
 import json
@@ -60,11 +60,21 @@ def set_mqtt_client(client: MQTTClient):
     def _on_any_message(received_msg):
         try:
             data = client.distance_model.Calc(received_msg)
+            payload: Dict[str, Any] = dict(data) if isinstance(data, dict) else {"raw": data}
+
+            beacon_positions = getattr(client, "beacon_positions", None)
+            if beacon_positions:
+                try:
+                    estimate = client.distance_model.position_from_distances(data, beacon_positions)
+                    payload["position"] = estimate
+                except Exception:
+                    pass
+
             event = {
                 "type": "distances",
                 "topic": received_msg.topic,
                 "timestamp": received_msg.timestamp.isoformat(),
-                "data": data,
+                "data": payload,
             }
             # Schedule broadcast on the main event loop even from non-async threads
             loop = _event_loop

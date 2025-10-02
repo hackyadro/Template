@@ -3,7 +3,7 @@ import asyncio
 import ssl
 import json
 import logging
-from typing import Dict, Any, List, Optional, Callable
+from typing import Dict, Any, List, Optional, Callable, Tuple
 from datetime import datetime
 from collections import deque
 import os
@@ -15,8 +15,8 @@ from models import ReceivedMQTTMessage, QoSLevel
 
 # InfluxDB client
 try:
-    from influxdb_client import InfluxDBClient, Point
-    from influxdb_client.client.write_api import SYNCHRONOUS
+    from influxdb_client import InfluxDBClient, Point  # type: ignore[attr-defined]
+    from influxdb_client.client.write_api import SYNCHRONOUS  # type: ignore[attr-defined]
 except Exception:  # Library may not be installed in some environments
     InfluxDBClient = None
     Point = None
@@ -39,7 +39,8 @@ class MQTTClient:
             ca_cert_path: Optional[str] = None,
             cert_file_path: Optional[str] = None,
             key_file_path: Optional[str] = None,
-            tls_insecure: bool = False
+            tls_insecure: bool = False,
+            beacon_positions: Optional[Dict[str, Tuple[float, float]]] = None,
     ):
         self.broker_host = broker_host
         self.broker_port = broker_port
@@ -52,6 +53,7 @@ class MQTTClient:
         self.key_file_path = key_file_path
         self.tls_insecure = tls_insecure
         self.distance_model = Distance_model()
+        self.beacon_positions: Dict[str, Tuple[float, float]] = dict(beacon_positions or {})
 
         # InfluxDB settings (lazy init)
         self._influx_client = None
@@ -385,20 +387,27 @@ class MQTTClient:
                     except Exception as e:
                         logger.error(f"Error in message callback: {e}")
 
-            positional_data = self.distance_model.Calc(received_msg)
-            print("Position: " + str(positional_data))
-            try:
-                position = positional_data.get("position") if isinstance(positional_data, dict) else None
-                # print("Position: " + position)
-            except Exception:
-                position = None
-                # print("position is null")
-            if position is not None:
-                self._write_position_to_influx(position, received_msg.topic, received_msg.timestamp)
-                # print("Position: " + position)
-            # Optionally forward to front-end if such integration exists
-            try:
-                front.send(positional_data)  # type: ignore[name-defined]
+            if self.beacon_positions:
+                try:
+                    estimate = self.distance_model.get_position_from_message(received_msg, self.beacon_positions)
+
+                    if estimate[0] is float("nan") or estimate[1] is float("nan"):
+                        positional_data = self.distance_model.Calc(received_msg)
+                        payload = positional_data
+                    else:
+                        payload = estimate
+                        print("Position: " + str(payload))
+                        if payload is not None:
+                            self._write_position_to_influx(payload, received_msg.topic, received_msg.timestamp)
+                            # print("Position: " + position)
+                except Exception:
+                    logger.debug("Failed to compute position from beacon distances", exc_info=True)
+            else:
+                positional_data = self.distance_model.Calc(received_msg)
+                payload = positional_data
+
+            try: # TODO: DOES THIS WORK OR NOT?
+                front.send(payload)  # type: ignore[name-defined]
             except Exception:
                 pass
 

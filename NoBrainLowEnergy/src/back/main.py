@@ -4,10 +4,12 @@ from contextlib import asynccontextmanager
 import uvicorn
 import asyncio
 from typing import Dict, Any
+from pathlib import Path
 import logging
 from datetime import datetime
 import os
 
+from beacon_loader import load_beacon_positions
 from mqtt_client import MQTTClient
 from models import MessageModel, DeviceStatus, MQTTMessage
 from routes import router, set_mqtt_client, build_ws_distances_info
@@ -20,6 +22,8 @@ logger = logging.getLogger(__name__)
 
 # Global MQTT client instance
 mqtt_client = None
+SEARCH_ROOT = Path(__file__).resolve()
+BEACON_FILE_PATH = SEARCH_ROOT / "cfg" / "locations.beacons"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -62,6 +66,13 @@ async def lifespan(app: FastAPI):
         f"MQTT config - host: {broker_host}, port: {broker_port_final}, use_tls: {use_tls}, username: {'set' if username else 'unset'}"
     )
 
+    beacon_positions = load_beacon_positions(BEACON_FILE_PATH)
+    app.state.beacon_positions = beacon_positions
+    if beacon_positions:
+        logger.info("Loaded %d beacon locations from %s", len(beacon_positions), BEACON_FILE_PATH)
+    else:
+        logger.warning("No beacon locations loaded from %s", BEACON_FILE_PATH)
+
     mqtt_client = MQTTClient(
         broker_host=broker_host,
         broker_port=broker_port_final,
@@ -70,7 +81,8 @@ async def lifespan(app: FastAPI):
         use_tls=use_tls,
         ca_cert_path=ca_cert_path,
         cert_file_path=cert_file_path,
-        key_file_path=key_file_path
+        key_file_path=key_file_path,
+        beacon_positions=beacon_positions,
     )
     
     # Connect to MQTT broker
