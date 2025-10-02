@@ -1,6 +1,8 @@
-from fastapi import APIRouter, HTTPException, Query, Form
+from fastapi import APIRouter, HTTPException, Query, Form, WebSocket, WebSocketDisconnect
 from typing import List, Optional, Annotated
 from datetime import datetime, timedelta
+import asyncio
+import json
 
 from models import (
     SensorData, DeviceStatus, DeviceCommand, AlertMessage,
@@ -14,11 +16,67 @@ router = APIRouter(prefix="/api/v1", tags=["devices"])
 # This would be injected or passed from main app
 mqtt_client: Optional[MQTTClient] = None
 
+# WebSocket subscribers for distances streaming
+_distance_subscribers: set[asyncio.Queue] = set()
+_distance_heartbeat_interval: float = 30.0
+# Store the main event loop to schedule coroutines from non-async threads (e.g., Paho MQTT callbacks)
+_event_loop: Optional[asyncio.AbstractEventLoop] = None
+
+
+async def _broadcast_distances(event: dict):
+    if not _distance_subscribers:
+        return
+    for q in list(_distance_subscribers):
+        try:
+            q.put_nowait(event)
+        except asyncio.QueueFull:
+            # Drop if subscriber is slow
+            pass
+
 
 def set_mqtt_client(client: MQTTClient):
-    """Set the MQTT client instance"""
-    global mqtt_client
+    """Set the MQTT client instance and register distance broadcast callback."""
+    global mqtt_client, _event_loop
     mqtt_client = client
+
+    # Capture the running loop to use from MQTT (background) thread
+    try:
+        _event_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # If not in an event loop, leave as None; main may call this again later
+        _event_loop = None
+
+    # Register a catch-all callback to compute and broadcast distances
+    def _on_any_message(received_msg):
+        try:
+            data = client.distance_model.Calc(received_msg)
+            event = {
+                "type": "distances",
+                "topic": received_msg.topic,
+                "timestamp": received_msg.timestamp.isoformat(),
+                "data": data,
+            }
+            # Schedule broadcast on the main event loop even from non-async threads
+            loop = _event_loop
+            if loop is not None:
+                asyncio.run_coroutine_threadsafe(_broadcast_distances(event), loop)
+            else:
+                try:
+                    # Best-effort if we are in an async context
+                    loop2 = asyncio.get_running_loop()
+                    loop2.create_task(_broadcast_distances(event))
+                except RuntimeError:
+                    # No available loop; drop the event
+                    pass
+        except Exception:
+            # Avoid breaking MQTT processing due to WS errors
+            pass
+
+    try:
+        client.add_message_callback("#", _on_any_message)
+    except Exception:
+        # If client not ready yet, ignore; main may call this again later
+        pass
 
 
 @router.get("/devices", response_model=PaginatedResponse)
@@ -200,3 +258,54 @@ async def acknowledge_alert(alert_id: str):
         message=f"Alert {alert_id} acknowledged",
         data={"alert_id": alert_id, "acknowledged_at": datetime.utcnow().isoformat()}
     )
+
+
+# WebSocket endpoint to stream distances computed from incoming MQTT messages
+@router.websocket("/ws/distances")
+async def ws_distances(websocket: WebSocket):
+    await websocket.accept()
+    queue: asyncio.Queue = asyncio.Queue(maxsize=100)
+    _distance_subscribers.add(queue)
+    try:
+        # Optional greeting
+        await websocket.send_json({"type": "hello", "endpoint": "distances"})
+        while True:
+            try:
+                item = await asyncio.wait_for(queue.get(), timeout=_distance_heartbeat_interval)
+                await websocket.send_json(item)
+            except asyncio.TimeoutError:
+                # Send heartbeat to keep connection alive
+                await websocket.send_json({"type": "heartbeat", "ts": datetime.utcnow().isoformat()})
+    except WebSocketDisconnect:
+        # Client disconnected
+        pass
+    except Exception:
+        # Ignore other errors to avoid crashing endpoint
+        pass
+    finally:
+        _distance_subscribers.discard(queue)
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+
+# Allow HTTP GET on the same path to avoid 404 when accessed via browser/HTTP
+@router.get("/ws/distances")
+async def ws_distances_info():
+    return {
+        "endpoint": "/api/v1/ws/distances",
+        "protocol": "websocket",
+        "usage": "Connect with a WebSocket client to ws://<host>:8000/api/v1/ws/distances to receive distance events.",
+        "message_shape": {"type": "distances", "topic": "<topic>", "timestamp": "ISO8601", "data": {"names": ["..."], "distances": [0.0]}},
+    }
+
+# REST endpoint to return recent MQTT messages
+@router.get("/mqtt/messages")
+async def get_mqtt_messages(limit: int = Query(50, ge=1, le=100)):
+    """Return recent MQTT messages captured by the MQTT client."""
+    if not mqtt_client:
+        raise HTTPException(status_code=503, detail="MQTT client not initialized")
+    try:
+        return mqtt_client.get_recent_messages(limit=limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve MQTT messages: {e}")

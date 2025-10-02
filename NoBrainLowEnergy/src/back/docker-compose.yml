@@ -23,9 +23,9 @@ services:
       - INFLUXDB_TOKEN=${INFLUXDB_TOKEN:-admintoken}
       - INFLUXDB_ORG=nobrain
       - INFLUXDB_BUCKET=default
-      # Add SSL_KEY_FILE and SSL_CERT_FILE if you want HTTPS enabled for FastAPI
-      # - SSL_KEY_FILE=/app/certs/server.key
-      # - SSL_CERT_FILE=/app/certs/server.crt
+      # HTTPS/WSS settings for FastAPI
+      - SSL_KEY_FILE=/app/certs/server.key
+      - SSL_CERT_FILE=/app/certs/server.crt
     volumes:
       - ./certs:/app/certs:ro
       - ./logs:/app/logs

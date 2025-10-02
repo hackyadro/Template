@@ -12,7 +12,8 @@ from mqtt_client import MQTTClient
 from models import MessageModel, DeviceStatus, MQTTMessage
 from config import settings
 from routes import router, set_mqtt_client
-from fastapi.responses import JSONResponse
+import routes as routes_module
+from fastapi.responses import JSONResponse, RedirectResponse
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -121,6 +122,82 @@ app = FastAPI(
 
 # Include API routes
 app.include_router(router)
+
+# WebSocket endpoint without API prefix that streams only distances list
+from fastapi import WebSocket, WebSocketDisconnect
+
+@app.websocket("/ws/distance")
+async def ws_distance(websocket: WebSocket):
+    await websocket.accept()
+    queue: asyncio.Queue = asyncio.Queue(maxsize=100)
+    routes_module._distance_subscribers.add(queue)
+    try:
+        while True:
+            item = await queue.get()  # Wait for next distance event; no heartbeat/greeting
+            try:
+                data = item.get("data") if isinstance(item, dict) else None
+                distances = data.get("distances") if isinstance(data, dict) else None
+                if distances is not None:
+                    await websocket.send_json(distances)
+            except Exception:
+                # Silently skip malformed events
+                pass
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        routes_module._distance_subscribers.discard(queue)
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+
+# WebSocket endpoint without API prefix that streams full distance events
+@app.websocket("/ws/distances")
+async def ws_distances(websocket: WebSocket):
+    await websocket.accept()
+    queue: asyncio.Queue = asyncio.Queue(maxsize=100)
+    routes_module._distance_subscribers.add(queue)
+    try:
+        # Optional greeting
+        await websocket.send_json({"type": "hello", "endpoint": "distances"})
+        while True:
+            try:
+                item = await asyncio.wait_for(queue.get(), timeout=routes_module._distance_heartbeat_interval)
+                await websocket.send_json(item)
+            except asyncio.TimeoutError:
+                # Send heartbeat to keep connection alive
+                await websocket.send_json({"type": "heartbeat", "ts": datetime.utcnow().isoformat()})
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        routes_module._distance_subscribers.discard(queue)
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+
+# HTTP GET endpoint for /ws/distances to provide info
+@app.get("/ws/distances")
+async def ws_distances_info():
+    return {
+        "endpoint": "/ws/distances",
+        "protocol": "websocket",
+        "usage": "Connect with a WebSocket client to ws://<host>:8000/ws/distances to receive distance events.",
+        "message_shape": {"type": "distances", "topic": "<topic>", "timestamp": "ISO8601", "data": {"names": ["..."], "distances": [0.0]}},
+    }
+
+# Backward-compat redirect: support /devices → /api/v1/devices
+@app.get("/devices")
+async def redirect_devices(request: Request):
+    query = request.url.query
+    target = "/api/v1/devices"
+    if query:
+        target = f"{target}?{query}"
+    return RedirectResponse(url=target, status_code=307)
 
 # Set MQTT client for routes
 if mqtt_client:
