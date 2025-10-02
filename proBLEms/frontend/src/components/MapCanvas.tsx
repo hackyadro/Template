@@ -9,31 +9,48 @@ interface MapCanvasProps {
   height?: number;
 }
 
-export const MapCanvas = ({ 
-  beacons, 
-  positions, 
-  currentPosition,
-  width = 800,
-  height = 600
-}: MapCanvasProps) => {
+export const MapCanvas = ({
+                            beacons,
+                            positions,
+                            currentPosition,
+                            width = 800,
+                            height = 600
+                          }: MapCanvasProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [scale, setScale] = useState(50); // pixels per meter
+
+  // масштаб: пикселей на метр
+  const [scale, setScale] = useState(50);
+  // смещение "начала координат" (0,0) в пикселях от левого-верхнего угла canvas
   const [offset, setOffset] = useState({ x: 50, y: 50 });
+
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
-  const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    setIsDragging(true);
-    setDragStart({ x: e.clientX - offset.x, y: e.clientY - offset.y });
-  }, [offset]);
+  // === координатное преобразование (мировые -> экранные) ===
+  // ВАЖНО: инвертируем Y, чтобы положительные Y шли вверх экрана.
+  const worldToCanvas = useCallback(
+      (wx: number, wy: number) => ({
+        x: offset.x + wx * scale,
+        y: offset.y - wy * scale
+      }),
+      [offset, scale]
+  );
 
-  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDragging) return;
-    setOffset({
-      x: e.clientX - dragStart.x,
-      y: e.clientY - dragStart.y
-    });
-  }, [isDragging, dragStart]);
+  const handleMouseDown = useCallback(
+      (e: React.MouseEvent<HTMLCanvasElement>) => {
+        setIsDragging(true);
+        setDragStart({ x: e.clientX - offset.x, y: e.clientY - offset.y });
+      },
+      [offset]
+  );
+
+  const handleMouseMove = useCallback(
+      (e: React.MouseEvent<HTMLCanvasElement>) => {
+        if (!isDragging) return;
+        setOffset({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
+      },
+      [isDragging, dragStart]
+  );
 
   const handleMouseUp = useCallback(() => {
     setIsDragging(false);
@@ -48,145 +65,135 @@ export const MapCanvas = ({
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Clear canvas
+    // Clear
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Draw grid
+    // Draw
     drawGrid(ctx, canvas.width, canvas.height);
-
-    // Draw beacons
     drawBeacons(ctx, beacons);
-
-    // Draw path
     drawPath(ctx, positions);
+    if (currentPosition) drawCurrentPosition(ctx, currentPosition);
+  }, [beacons, positions, currentPosition, scale, offset, worldToCanvas]);
 
-    // Draw current position
-    if (currentPosition) {
-      drawCurrentPosition(ctx, currentPosition);
-    }
-  }, [beacons, positions, currentPosition, scale, offset]);
-
-  const drawGrid = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
-    // Находим положение точки (0,0) на canvas
+  // === GRID ===
+  const drawGrid = (ctx: CanvasRenderingContext2D, w: number, h: number) => {
     const originX = offset.x;
     const originY = offset.y;
 
-    // Рисуем сетку
+    // линия сетки
     ctx.strokeStyle = 'hsl(215 20% 92%)';
     ctx.lineWidth = 1;
     ctx.font = '10px system-ui';
     ctx.fillStyle = 'hsl(215 25% 45%)';
 
-    // Вертикальные линии (параллельно оси Y)
-    for (let i = Math.floor(-originX / scale); i <= Math.ceil((width - originX) / scale); i++) {
+    // Вертикальные линии (мировые X = i)
+    // i от floor(-originX/scale) до ceil((w - originX)/scale)
+    for (let i = Math.floor(-originX / scale); i <= Math.ceil((w - originX) / scale); i++) {
       const x = originX + i * scale;
-      if (x < 0 || x > width) continue;
-      
+      if (x < 0 || x > w) continue;
       ctx.beginPath();
       ctx.moveTo(x, 0);
-      ctx.lineTo(x, height);
+      ctx.lineTo(x, h);
       ctx.stroke();
 
-      // Метки на оси X (только если рядом с осью X)
-      if (Math.abs(originY) < height && originY > 10 && originY < height - 10) {
+      // подписи по X на оси X (где y=0 -> экранная y = originY)
+      if (originY > 10 && originY < h - 10) {
         ctx.fillText(i.toString(), x - 5, originY + 15);
       }
     }
 
-    // Горизонтальные линии (параллельно оси X)
-    for (let i = Math.floor(-originY / scale); i <= Math.ceil((height - originY) / scale); i++) {
-      const y = originY + i * scale;
-      if (y < 0 || y > height) continue;
-      
+    // Горизонтальные линии (мировые Y = i)
+    // Мэппинг: screenY = originY - i*scale
+    // Для покрытия экрана: i от floor((originY - h)/scale) до ceil(originY/scale)
+    for (let i = Math.floor((originY - h) / scale); i <= Math.ceil(originY / scale); i++) {
+      const y = originY - i * scale;
+      if (y < 0 || y > h) continue;
       ctx.beginPath();
       ctx.moveTo(0, y);
-      ctx.lineTo(width, y);
+      ctx.lineTo(w, y);
       ctx.stroke();
 
-      // Метки на оси Y (только если рядом с осью Y)
-      if (Math.abs(originX) < width && originX > 20 && originX < width - 20) {
-        ctx.fillText((-i).toString(), originX - 20, y + 4);
+      // подписи по Y на оси Y (где x=0 -> экранная x = originX)
+      if (originX > 20 && originX < w - 20) {
+        // РАНЬШЕ было -i. Теперь ось инвертирована в рендере, так что показываем i как есть.
+        ctx.fillText(i.toString(), originX - 20, y + 4);
       }
     }
 
-    // Рисуем оси координат
+    // Оси координат
     ctx.strokeStyle = 'hsl(215 25% 25%)';
     ctx.lineWidth = 2;
 
-    // Ось X
-    if (originY >= 0 && originY <= height) {
+    // Ось X (мировая y=0 -> экранная y = originY)
+    if (originY >= 0 && originY <= h) {
       ctx.beginPath();
       ctx.moveTo(0, originY);
-      ctx.lineTo(width, originY);
+      ctx.lineTo(w, originY);
       ctx.stroke();
 
-      // Стрелка на оси X
+      // стрелка и подпись X
       ctx.beginPath();
-      ctx.moveTo(width - 10, originY - 5);
-      ctx.lineTo(width, originY);
-      ctx.lineTo(width - 10, originY + 5);
+      ctx.moveTo(w - 10, originY - 5);
+      ctx.lineTo(w, originY);
+      ctx.lineTo(w - 10, originY + 5);
       ctx.stroke();
 
-      // Подпись оси X
       ctx.fillStyle = 'hsl(215 25% 15%)';
       ctx.font = 'bold 12px system-ui';
-      ctx.fillText('X', width - 20, originY - 10);
+      ctx.fillText('X', w - 20, originY - 10);
     }
 
-    // Ось Y
-    if (originX >= 0 && originX <= width) {
+    // Ось Y (мировая x=0 -> экранная x = originX)
+    if (originX >= 0 && originX <= w) {
       ctx.beginPath();
       ctx.moveTo(originX, 0);
-      ctx.lineTo(originX, height);
+      ctx.lineTo(originX, h);
       ctx.stroke();
 
-      // Стрелка на оси Y
+      // стрелка вверх (положительное Y теперь визуально вверх)
       ctx.beginPath();
       ctx.moveTo(originX - 5, 10);
       ctx.lineTo(originX, 0);
       ctx.lineTo(originX + 5, 10);
       ctx.stroke();
 
-      // Подпись оси Y
       ctx.fillStyle = 'hsl(215 25% 15%)';
       ctx.font = 'bold 12px system-ui';
       ctx.fillText('Y', originX + 10, 15);
     }
 
-    // Точка отсчета (0,0)
-    if (originX >= 0 && originX <= width && originY >= 0 && originY <= height) {
+    // Точка (0,0)
+    if (originX >= 0 && originX <= w && originY >= 0 && originY <= h) {
       ctx.fillStyle = 'hsl(215 25% 15%)';
       ctx.beginPath();
       ctx.arc(originX, originY, 4, 0, 2 * Math.PI);
       ctx.fill();
 
-      // Подпись (0,0)
       ctx.font = 'bold 11px system-ui';
       ctx.fillText('(0,0)', originX + 8, originY + 15);
     }
   };
 
-  const drawBeacons = (ctx: CanvasRenderingContext2D, beacons: Beacon[]) => {
-    beacons.forEach(beacon => {
-      const x = offset.x + beacon.x * scale;
-      const y = offset.y + beacon.y * scale;
+  // === BEACONS ===
+  const drawBeacons = (ctx: CanvasRenderingContext2D, list: Beacon[]) => {
+    list.forEach(b => {
+      const { x, y } = worldToCanvas(b.x, b.y);
 
-      // Draw beacon circle
+      // круг маяка
       ctx.fillStyle = 'hsl(355 85% 55%)';
       ctx.beginPath();
       ctx.arc(x, y, 8, 0, 2 * Math.PI);
       ctx.fill();
 
-      // Draw beacon label
+      // подпись
       ctx.fillStyle = 'hsl(215 25% 15%)';
       ctx.font = 'bold 12px system-ui';
-      ctx.fillText(beacon.id, x + 12, y + 5);
+      ctx.fillText(b.id, x + 12, y + 5);
 
-      // Draw signal radius
+      // радиус сигнала (декор)
       ctx.strokeStyle = 'hsla(355 85% 55% / 0.2)';
       ctx.lineWidth = 1;
       ctx.beginPath();
@@ -195,32 +202,28 @@ export const MapCanvas = ({
     });
   };
 
-  const drawPath = (ctx: CanvasRenderingContext2D, positions: Position[]) => {
-    if (positions.length < 2) return;
+  // === PATH ===
+  const drawPath = (ctx: CanvasRenderingContext2D, pts: Position[]) => {
+    if (pts.length < 2) return;
 
     ctx.strokeStyle = 'hsl(215 15% 45%)';
     ctx.lineWidth = 2;
+
+    const first = pts[0];
+    const p0 = worldToCanvas(first.x, first.y);
+
     ctx.beginPath();
+    ctx.moveTo(p0.x, p0.y);
 
-    const first = positions[0];
-    const startX = offset.x + first.x * scale;
-    const startY = offset.y + first.y * scale;
-    ctx.moveTo(startX, startY);
-
-    for (let i = 1; i < positions.length; i++) {
-      const pos = positions[i];
-      const x = offset.x + pos.x * scale;
-      const y = offset.y + pos.y * scale;
-      ctx.lineTo(x, y);
+    for (let i = 1; i < pts.length; i++) {
+      const p = worldToCanvas(pts[i].x, pts[i].y);
+      ctx.lineTo(p.x, p.y);
     }
-
     ctx.stroke();
 
-    // Draw position points
-    positions.forEach(pos => {
-      const x = offset.x + pos.x * scale;
-      const y = offset.y + pos.y * scale;
-      
+    // точки на пути
+    pts.forEach(pos => {
+      const { x, y } = worldToCanvas(pos.x, pos.y);
       ctx.fillStyle = 'hsl(215 15% 45%)';
       ctx.beginPath();
       ctx.arc(x, y, 3, 0, 2 * Math.PI);
@@ -228,31 +231,31 @@ export const MapCanvas = ({
     });
   };
 
-  const drawCurrentPosition = (ctx: CanvasRenderingContext2D, position: Position) => {
-    const x = offset.x + position.x * scale;
-    const y = offset.y + position.y * scale;
+  // === CURRENT POSITION ===
+  const drawCurrentPosition = (ctx: CanvasRenderingContext2D, pos: Position) => {
+    const { x, y } = worldToCanvas(pos.x, pos.y);
 
-    // Draw accuracy circle
-    if (position.accuracy) {
+    // точность
+    if (pos.accuracy) {
       ctx.fillStyle = 'hsla(210 90% 48% / 0.1)';
       ctx.beginPath();
-      ctx.arc(x, y, position.accuracy * scale, 0, 2 * Math.PI);
+      ctx.arc(x, y, pos.accuracy * scale, 0, 2 * Math.PI);
       ctx.fill();
 
       ctx.strokeStyle = 'hsla(210 90% 48% / 0.3)';
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(x, y, position.accuracy * scale, 0, 2 * Math.PI);
+      ctx.arc(x, y, pos.accuracy * scale, 0, 2 * Math.PI);
       ctx.stroke();
     }
 
-    // Draw current position
+    // сам маркер
     ctx.fillStyle = 'hsl(210 90% 48%)';
     ctx.beginPath();
     ctx.arc(x, y, 8, 0, 2 * Math.PI);
     ctx.fill();
 
-    // Draw white border
+    // белая обводка
     ctx.strokeStyle = 'white';
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -261,16 +264,16 @@ export const MapCanvas = ({
   };
 
   return (
-    <canvas
-      ref={canvasRef}
-      width={width}
-      height={height}
-      className="border border-border rounded-lg bg-card cursor-move"
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
-      onWheel={handleWheel}
-    />
+      <canvas
+          ref={canvasRef}
+          width={width}
+          height={height}
+          className="border border-border rounded-lg bg-card cursor-move"
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+          onWheel={handleWheel}
+      />
   );
 };
