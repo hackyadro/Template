@@ -21,7 +21,7 @@ app.use(bodyParser.json());
 let clients = [];
 let state = [];
 
-console.log('=== Server starting ===');
+console.log('Server starting');
 console.log('Endpoints registered: /, /beacons, /api/state, /api/status');
 
 // Вместо localhost используем переменную окружения
@@ -34,36 +34,36 @@ const mqttClient = mqtt.connect(`mqtt://${mqttHost}:${mqttPort}`, {
 });
 
 mqttClient.on('connect', () => {
-    console.log('✅ Подключились к MQTT');
+    console.log('Подключились к MQTT');
     
     // Подписываемся на все топики skynet
     mqttClient.subscribe('skynet/#', (err) => {
         if (err) {
-            console.log('❌ Ошибка подписки:', err);
+            console.log('Ошибка подписки:', err);
         } else {
-            console.log('✅ Подписались на skynet/#');
+            console.log('Подписались на skynet/#');
         }
     });
 });
 
 // Убедитесь что этот обработчик есть и работает:
 mqttClient.on('message', (topic, message) => {
-    console.log(`🔔 MQTT ПОЛУЧЕНО: [${topic}]`, message.toString());
+    console.log(`MQTT ПОЛУЧЕНО: [${topic}]`, message.toString());
     
     try {
         const data = JSON.parse(message.toString());
-        console.log('📊 Данные из MQTT:', data);
+        console.log('Данные из MQTT:', data);
         
         // ВАЖНО: обновляем state данными из MQTT
         state = data.data || data; // берем либо data.data, либо весь объект
-        console.log('🔄 State обновлен:', state);
+        console.log('State обновлен:', state);
         
         // Уведомляем SSE клиентов
         notifyClients();
-        console.log('📢 Клиенты уведомлены');
+        console.log('Клиенты уведомлены');
         
     } catch (e) {
-        console.log('❌ Ошибка парсинга:', e.message);
+        console.log('Ошибка парсинга:', e.message);
         // Если ошибка парсинга, сохраняем как текст
         state = [{ error: 'parse_error', message: message.toString() }];
         notifyClients();
@@ -71,7 +71,7 @@ mqttClient.on('message', (topic, message) => {
 });
 
 mqttClient.on('error', (err) => {
-    console.log('❌ MQTT ошибка:', err.message);
+    console.log('MQTT ошибка:', err.message);
 });
 
 app.get('/', (req, res) => {
@@ -181,7 +181,7 @@ app.get('/api/mqtt-info', (req, res) => {
 app.post('/api/test-mqtt', (req, res) => {
     const testData = req.body;
     
-    console.log('🧪 Тестовые данные:', testData);
+    console.log('Тестовые данные:', testData);
     
     // Принудительно обновляем state
     state = testData;
