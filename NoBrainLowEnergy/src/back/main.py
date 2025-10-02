@@ -10,7 +10,6 @@ import os
 
 from mqtt_client import MQTTClient
 from models import MessageModel, DeviceStatus, MQTTMessage
-from config import settings
 from routes import router, set_mqtt_client, build_ws_distances_info
 import routes as routes_module
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -303,10 +302,6 @@ if __name__ == "__main__":
         api_port = 8000
 
     debug_env = os.getenv("DEBUG", None)
-    if debug_env is not None:
-        debug_flag = debug_env.strip().lower() in ("1", "true", "yes", "on")
-    else:
-        debug_flag = getattr(settings, "DEBUG", False)
 
     # FastAPI TLS logic (independent)
     fastapi_tls_env = os.getenv("FASTAPI_TLS_ON", None)
@@ -329,14 +324,9 @@ if __name__ == "__main__":
         "main:app",
         host=api_host,
         port=api_port,
-        reload=debug_flag,
         ssl_keyfile=ssl_keyfile,
         ssl_certfile=ssl_certfile
     )
-    if debug_env is not None:
-        debug_flag = debug_env.strip().lower() in ("1", "true", "yes", "on")
-    else:
-        debug_flag = getattr(settings, "DEBUG", False)
 
     # FastAPI TLS logic (independent)
     fastapi_tls_env = os.getenv("FASTAPI_TLS_ON", None)
@@ -359,7 +349,6 @@ if __name__ == "__main__":
         "main:app",
         host=api_host,
         port=api_port,
-        reload=debug_flag,
         ssl_keyfile=ssl_keyfile,
         ssl_certfile=ssl_certfile
     )
