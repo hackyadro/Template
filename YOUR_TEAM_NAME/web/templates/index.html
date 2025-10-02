@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Path Tracker (FastAPI)</title>
+  <style>
+    body { 
+      font-family: Arial, sans-serif; 
+      display: flex; 
+      justify-content: center; 
+      align-items: center; 
+      height: 100vh; 
+      background: #f9f9f9;
+    }
+    canvas { 
+      border: 1px solid black; 
+      background: white; 
+    }
+  </style>
+</head>
+<body>
+  <canvas id="map" width="600" height="600"></canvas>
+
+  <script>
+    const ctx = document.getElementById("map").getContext("2d");
+
+    async function fetchData() {
+      let res = await fetch("/positions?limit=100");
+      let points = await res.json();
+      drawPath(points);
+    }
+
+    function drawPath(points) {
+      const W = ctx.canvas.width;
+      const H = ctx.canvas.height;
+
+      if (points.length === 0) return;
+
+      let minX = Math.min(...points.map(p => p.x));
+      let maxX = Math.max(...points.map(p => p.x));
+      let minY = Math.min(...points.map(p => p.y));
+      let maxY = Math.max(...points.map(p => p.y));
+
+      let pathWidth = maxX - minX;
+      let pathHeight = maxY - minY;
+
+      let scale = Math.min(W / (pathWidth + 2), H / (pathHeight + 2));
+      let offsetX = (W - pathWidth * scale) / 2 - minX * scale;
+      let offsetY = (H - pathHeight * scale) / 2 - minY * scale;
+
+      ctx.clearRect(0,0,W,H);
+
+      // общая линия
+      ctx.beginPath();
+      points.forEach((p, i) => {
+        let px = p.x * scale + offsetX;
+        let py = H - (p.y * scale + offsetY);
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      });
+      ctx.strokeStyle = "blue";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // точки
+      points.forEach(p => {
+        let px = p.x * scale + offsetX;
+        let py = H - (p.y * scale + offsetY);
+        ctx.fillStyle = "red";
+        ctx.beginPath();
+        ctx.arc(px, py, 4, 0, 2*Math.PI);
+        ctx.fill();
+      });
+    }
+
+    // обновление каждые 2 сек
+    setInterval(fetchData, 2000);
+    fetchData();
+  </script>
+</body>
+</html>
