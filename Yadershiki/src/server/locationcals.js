@@ -93,11 +93,7 @@ async function trilaterate(dirname, rssiData) {
     
     const estimatedPosition = trilaterateThreeCircles(beaconsWithDistances);
     
-    
-    
-    return {
-        estimatedPosition: estimatedPosition,
-    };
+    return estimatedPosition;
 }
 
 // 1. Поставьте приемник на 1 метр от маячка
@@ -116,12 +112,6 @@ async function trilaterate(dirname, rssiData) {
     
 //     return averageRSSI;
 // }
-
-const rssi = [
-    ['beacon_1', -23],
-    ['beacon_2', -45],
-    ['beacon_3', -6]
-]
 
 
 trilaterate(".", rssi);
