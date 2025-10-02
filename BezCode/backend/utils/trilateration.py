@@ -18,12 +18,30 @@ class Trilateration:
     
     def calculate_position(self, beacons_data):
         """Возвращает позицию и использованные маяки"""
-        sorted_beacons = sorted(beacons_data, key=lambda x: x['rssi'], reverse=True)
         
-        if len(sorted_beacons) < 3:
+        valid_beacons = [b for b in beacons_data if b.get('rssi') is not None]
+        if len(valid_beacons) < 3:
             return None, []
             
-        beacons = sorted_beacons[:3]
+        sorted_beacons = sorted(valid_beacons, key=lambda x: x['rssi'], reverse=True)[:4]
+        beacons = sorted_beacons[:3]  # Сохраняем обратную совместимость
+
+        circles = []
+        used_beacons = []
+
+        for beacon in beacons:
+            try:
+                r = self.rssi_to_distance(beacon['rssi'])
+                if r <= 0:
+                    continue
+                circles.append(Circle(
+                    x=beacon['position']['x'],
+                    y=beacon['position']['y'],
+                    r=r
+                ))
+                used_beacons.append(beacon)
+            except (KeyError, TypeError):
+                continue
 
         A = np.array([beacons[0]['position']['x'], beacons[0]['position']['y']])
         B = np.array([beacons[1]['position']['x'], beacons[1]['position']['y']])  
@@ -37,18 +55,18 @@ class Trilateration:
         circles = [circle1, circle2, circle3]
 
         avg = [
-            A[0]+B[0]+C[0]/3,
-            A[1]+B[1]+C[1]/3
+            (A[0]+B[0]+C[0])/3,
+            (A[1]+B[1]+C[1])/3
         ]
 
         # sph, result= easy_least_squares(circles)
         # result = result.x
         results = []
-        for i in range(150):
+        for i in range(200):
             try:
                 sph, result = easy_least_squares(circles)
                 cr = 10
-                if result.success and abs(result.x[0] - avg[0]) < cr and abs(result.x[1] - avg[1]) < cr:
+                if result.success and (abs(result.x[0] - avg[0]) < cr and abs(result.x[1] - avg[1]) < cr):
                     results.append(result.x)
             except Exception as e:
                 print(f"Ошибка в итерации {i+1}: {e}")
