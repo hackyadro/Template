@@ -16,6 +16,8 @@ AP_PASSWORD = "setup123"
 AP_CHANNEL = 6
 CONNECT_TIMEOUT_SEC = 20
 
+ble = None
+
 # --- file utils unchanged ---
 def load_config():
     try:
@@ -154,26 +156,26 @@ def render_form(existing_config=None, message=""):
   <div class=\"container\">
     <h1>MQTT Publisher Setup</h1>
     {message}
-    <form method=\"POST\">
-      <label for=\"wifi_ssid\">Wi-Fi SSID</label>
-      <input id=\"wifi_ssid\" name=\"wifi_ssid\" value=\"{wifi_ssid}\" required>
+    <form method="POST">
+      <label for="wifi_ssid">Wi-Fi SSID</label>
+      <input id="wifi_ssid" name="wifi_ssid" value="{wifi_ssid}" required>
 
-      <label for=\"wifi_password\">Wi-Fi Password</label>
-      <input id=\"wifi_password\" name=\"wifi_password\" value=\"{wifi_password}\" type=\"password\">
+      <label for="wifi_password">Wi-Fi Password</label>
+      <input id="wifi_password" name="wifi_password" value="{wifi_password}" type="password">
 
-      <label for=\"broker_host\">Mosquitto Host</label>
-      <input id=\"broker_host\" name=\"broker_host\" value=\"{broker_host}\" required>
+      <label for="broker_host">Mosquitto Host</label>
+      <input id="broker_host" name="broker_host" value="{broker_host}" required>
 
-      <label for=\"broker_port\">Mosquitto Port</label>
-      <input id=\"broker_port\" name=\"broker_port\" value=\"{broker_port}\" type=\"number\" min=\"1\" max=\"65535\" required>
+      <label for="broker_port">Mosquitto Port</label>
+      <input id="broker_port" name="broker_port" value="{broker_port}" type="number" min="1" max="65535">
 
-      <label for=\"broker_login\">Broker Username</label>
-      <input id=\"broker_login\" name=\"broker_login\" value=\"{broker_login}\">
+      <label for="broker_login">Broker Username</label>
+      <input id="broker_login" name="broker_login" value="{broker_login}">
 
-      <label for=\"broker_password\">Broker Password</label>
-      <input id=\"broker_password\" name=\"broker_password\" value=\"{broker_password}\" type=\"password\">
+      <label for="broker_password">Broker Password</label>
+      <input id="broker_password" name="broker_password" value="{broker_password}" type="password">
 
-      <button type=\"submit\">Save &amp; Apply</button>
+      <button type="submit">Save &amp; Apply</button>
     </form>
   </div>
 </body>
@@ -385,10 +387,14 @@ def start_config_portal(existing_config=None):
                         "broker": {
                             "host": params.get("broker_host", ""),
                             "port": int(params.get("broker_port", "1883") or 1883),
-                            "username": params.get("broker_login", ""),
-                            "password": params.get("broker_password", "")
+                            # "username": params.get("broker_login", ""),
+                            # "password": params.get("broker_password", "")
                         }
                     }
+                    if params.get("broker_login"):
+                        new_config["broker"]["username"] = params.get("broker_login", "")
+                    if params.get("broker_password"):
+                        new_config["broker"]["password"] = params.get("broker_password", "")
 
                     if not new_config["wifi"]["ssid"] or not new_config["broker"]["host"]:
                         body_html = render_form(new_config, message="Wi-Fi SSID and Broker Host are required.")
@@ -443,6 +449,7 @@ def start_config_portal(existing_config=None):
 
 # --- main unchanged except we call portal ---
 def main():
+    global ble
     config = load_config()
     ble = bluetooth.BLE()
     ble.active(True)
