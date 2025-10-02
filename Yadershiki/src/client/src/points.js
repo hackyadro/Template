@@ -4,29 +4,28 @@ export default function drawPoints(origin, startsAt, step, points) {
 	const layer = new Konva.Layer();
 	
 	points.forEach((point) => {
-		const x = startsAt.x + step * (point.x - origin.x);
-		const y = startsAt.y + step * (point.y - origin.y);
-
-		layer.add(drawPoint(x, y, point.fill, point.name));
+		layer.add(drawPoint(origin, startsAt, step, point));
 	});
 	
 	return layer;
 }
 
-function drawPoint(x, y, fill, name) {
+export function drawPoint(origin, startsAt, step, pointData) {
+	const {x, y} = mapCoordinates(origin, startsAt, step, pointData);
+
 	const point = new Konva.Group({x, y});
 	const circle = new Konva.Circle({
 		radius: 10,
-		fill: fill || 'gray',
+		fill: pointData.fill || 'gray',
 		stroke: 'black',
 		strokeWidth: 1,
 	});
 
 	point.add(circle);
 	
-	if (name !== undefined) {
+	if (pointData.name !== undefined) {
 		const caption = new Konva.Text({
-			text: name,
+			text: pointData.name,
 			fontSize: 16,
 		});
 
@@ -37,4 +36,11 @@ function drawPoint(x, y, fill, name) {
 	}
 
 	return point;
+}
+
+export function mapCoordinates(origin, startsAt, step, coords) {
+	return {
+		x: startsAt.x + step * (coords.x - origin.x),
+		y: startsAt.y - step * (coords.y - origin.y),
+	};
 }
