@@ -1,4 +1,4 @@
-# YOUR_TEAM_NAME Hackathon Project
+# Yadronshiki Indoor	 Project
 
 ## Что реализовано
 - **device/** — код для ESP32-S3 на Micropython (сканирует BLE-маяки и шлёт их в MQTT).
@@ -11,7 +11,7 @@
 1. Установите Docker и Docker Compose.
 2. Клонируйте репозиторий:
    ```bash
-   git clone https://github.com/.../yadronshiki.git
+   git clone https://github.com/Oli1331/Yadronshiki.git
    cd yadronshiki
 3. Запустите систему
    ```bash
