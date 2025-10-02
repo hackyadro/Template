@@ -6,6 +6,7 @@ import bodyParser from 'body-parser';
 import cors from 'cors';
 import { fileURLToPath } from 'url';
 import mqtt from 'mqtt';
+import getBeacons from './beacons.js';
 
 dotenv.config();
 const port = process.env.PORT;
@@ -24,7 +25,6 @@ let state = [];
 console.log('Server starting');
 console.log('Endpoints registered: /, /beacons, /api/state, /api/status');
 
-// Вместо localhost используем переменную окружения
 const mqttHost = process.env.MQTT_HOST || 'localhost';
 const mqttPort = process.env.MQTT_PORT || 1883;
 
@@ -135,6 +135,10 @@ function notifyClients() {
     }
 }
 
+app.get('/api/beacons', async (req, res) => {
+	const beacons = await getBeacons(__dirname);
+	res.json(beacons);
+});
 
 app.get('/api/state', (req, res) => {
     res.json({
