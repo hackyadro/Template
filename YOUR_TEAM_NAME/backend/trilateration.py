@@ -1,3 +1,4 @@
+# backend/trilateration.py
 import math
 import numpy as np
 from statistics import median, stdev
@@ -20,9 +21,11 @@ class RobustTrilateration:
                 distances.append(max(0.1, dist))
             return distances
 
+        # Используем статистику RSSI для адаптивной настройки
         rssi_median = median(rssi_readings)
         rssi_std = stdev(rssi_readings) if len(rssi_readings) > 2 else 5.0
 
+        # Адаптивный выбор параметров
         if rssi_median > -50:
             measured_power = -45
             n = self.env_min
@@ -33,19 +36,23 @@ class RobustTrilateration:
             measured_power = -65
             n = 2.0
 
+        # Корректировка на основе разброса сигналов
         if rssi_std > 10:
             n += 0.5
 
         distances = []
         for rssi in rssi_readings:
             base_dist = 10 ** ((measured_power - rssi) / (10 * n))
+
             if rssi > -40:
                 dist = base_dist * 0.7
             elif rssi < -85:
                 dist = base_dist * 1.5
             else:
                 dist = base_dist
+
             distances.append(max(0.1, min(dist, 50.0)))
+
         return distances
 
     def estimate_environment_quality(self, rssi_readings: list) -> dict:
@@ -76,7 +83,7 @@ class RobustTrilateration:
             "quality": quality,
             "stability": stability,
             "median_rssi": rssi_median,
-            "range_rssi": rssi_range
+            "range_rssi": rssi_range,
         }
 
     def calculate_adaptive_weights(self, rssi_readings: list, distances: list, anchor_positions: list) -> list:
@@ -99,10 +106,11 @@ class RobustTrilateration:
 
             geo_factor = self._calculate_geometric_quality(i, anchor_positions)
             weight *= geo_factor
+
             weights.append(weight)
 
         total = sum(weights)
-        return [w/total for w in weights] if total > 0 else [1.0/len(weights)] * len(weights)
+        return [w / total for w in weights] if total > 0 else [1.0 / len(weights)] * len(weights)
 
     def _calculate_geometric_quality(self, index: int, anchors: list) -> float:
         """Оценка геометрического качества антенны"""
@@ -121,10 +129,10 @@ class RobustTrilateration:
         if len(vectors) >= 2:
             angles = []
             for i in range(len(vectors)):
-                for j in range(i+1, len(vectors)):
-                    dot = vectors[i][0]*vectors[j][0] + vectors[i][1]*vectors[j][1]
-                    mag1 = math.sqrt(vectors[i][0]**2 + vectors[i][1]**2)
-                    mag2 = math.sqrt(vectors[j][0]**2 + vectors[j][1]**2)
+                for j in range(i + 1, len(vectors)):
+                    dot = vectors[i][0] * vectors[j][0] + vectors[i][1] * vectors[j][1]
+                    mag1 = math.sqrt(vectors[i][0] ** 2 + vectors[i][1] ** 2)
+                    mag2 = math.sqrt(vectors[j][0] ** 2 + vectors[j][1] ** 2)
                     if mag1 > 0 and mag2 > 0:
                         cos_angle = dot / (mag1 * mag2)
                         cos_angle = max(-1.0, min(1.0, cos_angle))
@@ -137,6 +145,7 @@ class RobustTrilateration:
                     return 1.2
                 elif avg_angle < 0.5:
                     return 0.7
+
         return 1.0
 
     def weighted_residuals(self, params, anchors, distances, weights=None):
@@ -144,7 +153,7 @@ class RobustTrilateration:
         x, y = params
         res = []
         for i, anchor in enumerate(anchors):
-            calc_dist = math.sqrt((x - anchor[0])**2 + (y - anchor[1])**2)
+            calc_dist = math.sqrt((x - anchor[0]) ** 2 + (y - anchor[1]) ** 2)
             error = calc_dist - distances[i]
             if weights is not None:
                 error *= weights[i]
@@ -159,11 +168,8 @@ class RobustTrilateration:
         wy = sum(p[1] * w for p, w in zip(anchors, weights))
         points.append([wx, wy])
 
-        points.append([np.median([p[0] for p in anchors]),
-                       np.median([p[1] for p in anchors])])
-
-        points.append([np.mean([p[0] for p in anchors]),
-                       np.mean([p[1] for p in anchors])])
+        points.append([np.median([p[0] for p in anchors]), np.median([p[1] for p in anchors])])
+        points.append([np.mean([p[0] for p in anchors]), np.mean([p[1] for p in anchors])])
 
         return points
 
@@ -221,7 +227,7 @@ class RobustTrilateration:
         initial_points = self._generate_initial_points(anchor_positions, weights)
 
         best_solution = None
-        best_cost = float('inf')
+        best_cost = float("inf")
 
         for initial_guess in initial_points:
             try:
@@ -229,14 +235,15 @@ class RobustTrilateration:
                     self.weighted_residuals,
                     initial_guess,
                     args=(anchor_positions, distances, weights),
-                    method='lm',
+                    method="lm",
                     max_nfev=50,
-                    ftol=1e-6
+                    ftol=1e-6,
                 )
+
                 if result.cost < best_cost:
                     best_cost = result.cost
                     best_solution = result
-            except:
+            except Exception:
                 continue
 
         if best_solution is None:
@@ -251,33 +258,14 @@ class RobustTrilateration:
         smoothed_pos = self.apply_smoothing((x, y))
 
         return {
-            'x': smoothed_pos[0],
-            'y': smoothed_pos[1],
-            'raw_x': x,
-            'raw_y': y,
-            'estimated_distances': distances,
-            'environment_quality': env_info,
-            'accuracy_estimate': accuracy_estimate,
-            'converged': converged,
-            'anchors_used': len(anchor_positions),
-            'cost': best_cost if best_solution else float('inf')
+            "x": smoothed_pos[0],
+            "y": smoothed_pos[1],
+            "raw_x": x,
+            "raw_y": y,
+            "estimated_distances": distances,
+            "environment_quality": env_info,
+            "accuracy_estimate": accuracy_estimate,
+            "converged": converged,
+            "anchors_used": len(anchor_positions),
+            "cost": best_cost if best_solution else float("inf"),
         }
-
-
-# --- Старые функции (для совместимости) ---
-def estimate_distance(rssi, measured_power=-69, environmental_factor=2):
-    return 10 ** ((measured_power - rssi) / (10 * environmental_factor))
-
-
-def trilaterate_least_squares(anchor_points, distances):
-    def residuals(params, anchor_points, distances):
-        x, y = params
-        return [
-            math.sqrt((x - px)**2 + (y - py)**2) - d
-            for (px, py), d in zip(anchor_points, distances)
-        ]
-
-    initial_guess = [np.mean([p[0] for p in anchor_points]),
-                     np.mean([p[1] for p in anchor_points])]
-    result = least_squares(residuals, initial_guess, args=(anchor_points, distances), method='lm')
-    return result.x[0], result.x[1]
