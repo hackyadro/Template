@@ -1,6 +1,4 @@
 import json
-import threading
-import time
 import paho.mqtt.client as mqtt
 from .config import MQTT_BROKER, MQTT_PORT, MQTT_TOPIC, TEAM
 from .schema import ScanMessage
@@ -15,6 +13,7 @@ def on_connect(client, userdata, flags, rc):
     client.subscribe(f"hackyadro/{TEAM}/anchors/+/measurement")
 
 def on_message(client, userdata, msg):
+    print("Message:", msg.topic, msg.payload)
     try:
         payload = msg.payload.decode()
         data = json.loads(payload)
@@ -38,4 +37,5 @@ def start_mqtt_loop():
     client.on_message = on_message
     client.connect(MQTT_BROKER, MQTT_PORT, 60)
     client.loop_start()
+    # client.loop_forever()
     return client
