@@ -314,6 +314,8 @@ class RobustTrilateration:
         if len(anchor_positions) < 3:
             raise ValueError("Need at least 3 anchor points")
 
+        for pos, rssi in zip(anchor_positions, rssi_readings):
+            print(f"Anchor {pos} → RSSI {rssi}")
         # Перевод RSSI в расстояния
         distances = self.rssi_to_distance_adaptive(rssi_readings, anchor_positions)
 
