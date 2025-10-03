@@ -77,7 +77,7 @@ def set_mqtt_client(client: MQTTClient):
             position = None
             distance = None
             try:
-                estimate = client.distance_model.get_position_from_message(received_msg, beacon_positions)
+                position = client.distance_model.get_position_from_message(received_msg, beacon_positions)
             except Exception:
                 pass
 
