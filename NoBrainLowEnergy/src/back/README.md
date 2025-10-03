@@ -15,7 +15,6 @@
 ## Docs
 
 The API will be available at:
-- HTTPS: `https://localhost:8000`
 - HTTP: `http://localhost:8000`
 - API Documentation: `http://localhost:8000/docs`
 - Alternative docs: `http://localhost:8000/redoc`
