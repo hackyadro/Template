@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 
+const HOST_ADDRESS = "172.20.10.2:8000"
+
 // Типы
 interface Beacon {
   name: string;
@@ -9,7 +11,7 @@ interface Beacon {
 }
 
 interface Map {
-  id: string;
+  id: number;
   name: string;
   beacons: Beacon[];
   createdAt: Date;
@@ -27,35 +29,24 @@ interface Device {
   mac: string;
   color: string;
   pollFrequency: number; // Hz
-  mapId: string | null;
+  mapId: number | null;
   path: PathPoint[];
   isPolling: boolean;
-  pollIntervalId: number | null;
   visible: boolean;
 }
 
 // Состояние
 const maps = ref<Map[]>([]);
-const selectedMapId = ref<string | null>(null);
+const selectedMapId = ref<number | null>(null);
 const newMapName = ref('');
 const newMapBeacons = ref('');
 // Устройства
 const devices = ref<Device[]>([]);
-// Поля формы для нового устройства
-const newDeviceName = ref('');
-const newDeviceMac = ref('');
-const newDeviceMapId = ref<string | null>(null);
-const newDeviceFrequency = ref(1); // Гц
-const newDeviceColor = ref<string>('');
 
 // WebSocket: состояние и помощники
 const ws = ref<WebSocket | null>(null);
 const wsReady = ref(false);
-const backendWsUrl = ref<string>(
-  (typeof location !== 'undefined' && location.hostname)
-    ? `ws://${location.hostname}:8000/ws`
-    : 'ws://localhost:8000/ws'
-);
+const backendWsUrl = ref<string>(`ws://${HOST_ADDRESS}/ws`);
 
 type InMsg = { type: string; data: any };
 type OutMsg = { type: string; data: any };
@@ -81,7 +72,7 @@ const applyAllDevice = (data: any) => {
     if (existing) {
       existing.name = d.name ?? existing.name;
       existing.pollFrequency = d.freq ?? existing.pollFrequency;
-      existing.mapId = d.map_set ?? existing.mapId;
+      existing.mapId = d.map_set;
     } else {
       devices.value.push({
         id: Date.now().toString() + '_' + mac,
@@ -89,10 +80,9 @@ const applyAllDevice = (data: any) => {
         mac,
         color: getNextColor(),
         pollFrequency: d.freq ?? 1,
-        mapId: d.map_set ?? selectedMapId.value ?? null,
+        mapId: d.map_set,
         path: [],
-        isPolling: false,
-        pollIntervalId: null,
+        isPolling: d.isPolling ?? false,
         visible: true,
       });
     }
@@ -100,13 +90,14 @@ const applyAllDevice = (data: any) => {
 };
 
 const applyListMap = (data: any) => {
+  console.log(data);
   const payload = data?.maps ?? [];
   const newMaps: Map[] = [];
   for (const m of payload) {
     const beacons: Beacon[] = Array.isArray(m.beacons)
       ? m.beacons.map((b: any) => ({ name: String(b.name), x: Number(b.x), y: Number(b.y) }))
       : [];
-    newMaps.push({ id: String(m.id), name: String(m.name), beacons, createdAt: new Date() });
+    newMaps.push({ id: m.id, name: String(m.name), beacons, createdAt: new Date() });
   }
   if (newMaps.length > 0) {
     maps.value = newMaps;
@@ -220,26 +211,33 @@ const parseBeacons = (text: string): Beacon[] => {
 
 const saveMap = () => {
   if (!newMapName.value.trim()) {
-    alert('Введите название карты');
+    console.log('Введите название карты');
     return;
   }
   
   const beacons = parseBeacons(newMapBeacons.value);
   
   if (beacons.length < 3) {
-    alert('Нужно минимум 3 маяка для трилатерации');
+    console.log('Нужно минимум 3 маяка для трилатерации');
     return;
   }
   
+  sendWs({
+    type: 'add_map',
+    data: {
+      map_name: newMapName.value.trim(),
+      beacons: beacons.map(b => ({ name: b.name, x: b.x, y: b.y }))
+    }
+  });
+  
   const newMap: Map = {
-    id: Date.now().toString(),
+    id: Date.now(),
     name: newMapName.value.trim(),
     beacons,
     createdAt: new Date()
   };
   
   maps.value.push(newMap);
-  saveToLocalStorage();
   
   // Очистка формы
   newMapName.value = '';
@@ -249,59 +247,22 @@ const saveMap = () => {
   selectedMapId.value = newMap.id;
 };
 
-const selectMap = (mapId: string) => {
+const selectMap = (mapId: number) => {
   selectedMapId.value = mapId;
 };
 
-const deleteMap = (mapId: string) => {
-  maps.value = maps.value.filter((m: Map) => m.id !== mapId);
+const deleteMap = (mapId: number) => {
+  maps.value = maps.value.filter((m: Map) => m.id != mapId);
   if (selectedMapId.value === mapId) {
     selectedMapId.value = null;
   }
   // Открепляем устройства от удалённой карты и останавливаем их
   devices.value.forEach((d: Device) => {
-    if (d.mapId === mapId) {
+    if (d.mapId == mapId) {
       stopDevicePolling(d.id);
       d.mapId = null;
     }
   });
-  saveToLocalStorage();
-};
-
-// Получение позиции для устройства через REST API (если нужно polling без WebSocket)
-const fetchPositionFromServer = async (device: Device, map: Map | undefined): Promise<PathPoint | null> => {
-  try {
-    if (!map) return null;
-
-    // Запрос позиции через REST API
-    const backendUrl = (typeof location !== 'undefined' && location.hostname)
-      ? `http://${location.hostname}:8000`
-      : 'http://localhost:8000';
-
-    const response = await fetch(`${backendUrl}/api/position`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        mac: device.mac,
-        map_name: map.name
-      })
-    });
-
-    if (!response.ok) {
-      console.error('Position API error:', response.status);
-      return null;
-    }
-
-    const data = await response.json();
-    return {
-      x: data.x,
-      y: data.y,
-      timestamp: new Date(data.timestamp)
-    };
-  } catch (error) {
-    console.error('Ошибка получения позиции:', error);
-    return null;
-  }
 };
 
 // Устройства: логика и помощьники
@@ -312,80 +273,53 @@ const getNextColor = () => {
   return free || colorPalette[(devices.value.length) % colorPalette.length];
 };
 
-const addDevice = () => {
-  if (!newDeviceName.value.trim()) {
-    alert('Введите название устройства');
-    return;
-  }
-  if (!newDeviceMac.value.trim()) {
-    alert('Введите MAC адрес устройства');
-    return;
-  }
-  const device: Device = {
-    id: Date.now().toString(),
-    name: newDeviceName.value.trim(),
-    mac: newDeviceMac.value.trim(),
-    color: newDeviceColor.value || getNextColor(),
-    pollFrequency: newDeviceFrequency.value,
-    mapId: newDeviceMapId.value || selectedMapId.value || null,
-    path: [],
-    isPolling: false,
-    pollIntervalId: null,
-    visible: true,
-  };
-  devices.value.push(device);
-  // очистка формы
-  newDeviceName.value = '';
-  newDeviceMac.value = '';
-  newDeviceMapId.value = selectedMapId.value;
-  newDeviceFrequency.value = 1;
-  newDeviceColor.value = '';
-  saveToLocalStorage();
-};
-
 const removeDevice = (deviceId: string) => {
   const d = devices.value.find((x: Device) => x.id === deviceId);
   if (!d) return;
   stopDevicePolling(deviceId);
   devices.value = devices.value.filter((x: Device) => x.id !== deviceId);
-  saveToLocalStorage();
 };
 
 const startDevicePolling = (deviceId: string) => {
   const d = devices.value.find((x: Device) => x.id === deviceId);
   if (!d) return;
+
   if (!d.mapId) {
-    alert('Выберите карту для устройства');
+    console.log('Выберите карту для устройства');
     return;
   }
-  const m = maps.value.find((mm: Map) => mm.id === d.mapId);
+
+  const m = maps.value.find((mm: Map) => mm.id == d.mapId);
+
   if (!m) {
-    alert('Выбранная карта не найдена');
+    console.log('Выбранная карта не найдена');
     return;
   }
   d.isPolling = true;
   d.path = [];
 
-  // Теперь позиции приходят автоматически через WebSocket (position_update)
-  // Можно опционально делать периодический запрос через REST API для fallback
-  // Но основной механизм — WebSocket broadcast от бэкенда при получении сигналов
-  console.log(`Started tracking device: ${d.name} (${d.mac}) on map ${m.name}`);
+  sendWs({ type: 'set_write_road', data: { mac: d.mac, status: true } });
 };
 
 const stopDevicePolling = (deviceId: string) => {
   const d = devices.value.find((x: Device) => x.id === deviceId);
   if (!d) return;
   d.isPolling = false;
-  if (d.pollIntervalId !== null) {
-    clearInterval(d.pollIntervalId);
-    d.pollIntervalId = null;
-  }
+  sendWs({ type: 'set_write_road', data: { mac: d.mac, status: false } });
 };
 
 const clearDevicePath = (deviceId: string) => {
   const d = devices.value.find(x => x.id === deviceId);
   if (!d) return;
   d.path = [];
+};
+
+// Отправляем на сервер изменение карты устройства
+const handleDeviceMapChange = (device: Device) => {
+  if (device.mapId == null) return;
+  const m = maps.value.find((mm: Map) => mm.id === device.mapId);
+  if (!m) return;
+  sendWs({ type: 'set_map_to_device', data: { mac: device.mac, map_name: m.name } });
 };
 
 // Визуализация
@@ -407,45 +341,8 @@ const devicePathD = (device: Device) => {
   return d;
 };
 
-// LocalStorage
-const saveToLocalStorage = () => {
-  localStorage.setItem('indoor-locator-maps', JSON.stringify(maps.value));
-  localStorage.setItem('indoor-locator-devices', JSON.stringify(devices.value));
-};
-
-const loadFromLocalStorage = () => {
-  const stored = localStorage.getItem('indoor-locator-maps');
-  if (stored) {
-    try {
-      const parsed = JSON.parse(stored);
-      // восстанавливаем даты createdAt если нужно
-      maps.value = parsed.map((m: any) => ({ ...m, createdAt: m.createdAt ? new Date(m.createdAt) : new Date() } as Map));
-    } catch (error) {
-      console.error('Ошибка загрузки карт:', error);
-    }
-  }
-  const storedDevices = localStorage.getItem('indoor-locator-devices');
-  if (storedDevices) {
-    try {
-      const parsed = JSON.parse(storedDevices);
-      devices.value = parsed.map((d: any) => ({
-        ...d,
-        path: Array.isArray(d.path) ? d.path.map((p: any) => ({ x: p.x, y: p.y, timestamp: new Date(p.timestamp) })) : [],
-        isPolling: false,
-        pollIntervalId: null,
-      } as Device));
-    } catch (error) {
-      console.error('Ошибка загрузки устройств:', error);
-    }
-  }
-};
-
 // Lifecycle
 onMounted(() => {
-  loadFromLocalStorage();
-  // Автозаполнение цвета для формы
-  newDeviceColor.value = getNextColor();
-
   // Подключение к WebSocket бэкенда
   try {
     const socket = new WebSocket(backendWsUrl.value);
@@ -476,7 +373,6 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-  // Остановка всех устройств
   devices.value.forEach((d: Device) => stopDevicePolling(d.id));
   if (ws.value) {
     try { ws.value.close(); } catch {}
@@ -485,23 +381,19 @@ onUnmounted(() => {
   }
 });
 
-// Сохраняем в localStorage при изменениях
-watch([maps, devices], () => {
-  saveToLocalStorage();
-}, { deep: true });
-
 // Перезапуск опроса устройства при изменении его частоты
 const updateDeviceFrequency = (device: Device, freq: number) => {
   device.pollFrequency = freq;
-  if (device.isPolling) {
-    stopDevicePolling(device.id);
-    startDevicePolling(device.id);
-  }
 };
 
 const handleDeviceFreqInput = (device: Device, ev: Event) => {
   const val = parseFloat((ev.target as HTMLInputElement).value);
   if (!isNaN(val)) updateDeviceFrequency(device, val);
+};
+
+// Отправляем на сервер новую частоту после отпускания ползунка
+const handleDeviceFreqCommit = (device: Device) => {
+  sendWs({ type: 'set_freq', data: { mac: device.mac, freq: Number(device.pollFrequency) } });
 };
 </script>
 
@@ -575,6 +467,8 @@ const handleDeviceFreqInput = (device: Device, ev: Event) => {
         </section>
 
         <section class="card">
+          <h2>🛰️ Устройства</h2>
+
           <div v-if="devices.length === 0" class="empty-state" style="margin-top:12px;">Пока нет устройств</div>
 
           <!-- Список устройств -->
@@ -583,13 +477,11 @@ const handleDeviceFreqInput = (device: Device, ev: Event) => {
               class="device-item" 
               v-for="d in devices" 
               :key="d.id"
-              :class="{ 'device-item-inactive': d.mapId !== selectedMapId && selectedMapId }"
             >
               <div class="device-header">
                 <div class="device-title">
                   <span class="color-dot" :style="{ background: d.color }"></span>
-                  <strong>{{ d.name }}</strong>
-                  <span class="device-mac">({{ d.mac }})</span>
+                  <strong>{{ d.mac }}</strong>
                 </div>
                 <div class="device-actions">
                   <label class="device-visible">
@@ -603,7 +495,7 @@ const handleDeviceFreqInput = (device: Device, ev: Event) => {
               <div class="device-controls">
                 <div class="form-group">
                   <label :for="'mapSelect_' + d.id">Карта для устройства:</label>
-                  <select :id="'mapSelect_' + d.id" v-model="d.mapId">
+                  <select :id="'mapSelect_' + d.id" v-model="d.mapId" @change="handleDeviceMapChange(d)">
                     <option :value="null">— Не выбрано —</option>
                     <option v-for="m in maps" :key="m.id" :value="m.id">{{ m.name }}</option>
                   </select>
@@ -613,7 +505,7 @@ const handleDeviceFreqInput = (device: Device, ev: Event) => {
                     Частота: {{ d.pollFrequency.toFixed(1) }} Гц
                     <span class="hint">({{ Math.round(1000 / Math.max(d.pollFrequency, 0.0001)) }} мс)</span>
                   </label>
-                  <input :id="'freqRange_' + d.id" type="range" min="0.1" max="10" step="0.1" :value="d.pollFrequency" @input="handleDeviceFreqInput(d, $event)" />
+                  <input :id="'freqRange_' + d.id" type="range" min="0.1" max="10" step="0.1" :value="d.pollFrequency" @input="handleDeviceFreqInput(d, $event)" @change="handleDeviceFreqCommit(d)" />
                 </div>
                 <div class="button-group">
                   <button class="btn btn-success" @click="startDevicePolling(d.id)" :disabled="d.isPolling || !d.mapId">▶️ Старт</button>
@@ -623,40 +515,6 @@ const handleDeviceFreqInput = (device: Device, ev: Event) => {
               </div>
             </div>
           </div>
-
-          <br>
-          <br>
-
-          <h2>🛰️ Устройства</h2>
-
-          <!-- Форма добавления устройства -->
-          <div class="form-group">
-            <label for="newDeviceNameInput">Название устройства:</label>
-            <input id="newDeviceNameInput" v-model="newDeviceName" type="text" placeholder="Например: Тележка 1" />
-          </div>
-          <div class="form-group">
-            <label for="newDeviceMacInput">MAC адрес:</label>
-            <input id="newDeviceMacInput" v-model="newDeviceMac" type="text" placeholder="AA:BB:CC:DD:EE:FF" />
-          </div>
-          <div class="form-group">
-            <label for="newDeviceMapSelect">Карта:</label>
-            <select id="newDeviceMapSelect" v-model="newDeviceMapId">
-              <option :value="null">— Не выбрано —</option>
-              <option v-for="m in maps" :key="m.id" :value="m.id">{{ m.name }}</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label for="newDeviceFrequencyRange">
-              Частота опроса: {{ newDeviceFrequency.toFixed(1) }} Гц
-              <span class="hint">({{ Math.round(1000 / Math.max(newDeviceFrequency, 0.0001)) }} мс)</span>
-            </label>
-            <input id="newDeviceFrequencyRange" v-model.number="newDeviceFrequency" type="range" min="0.1" max="10" step="0.1" />
-          </div>
-          <div class="form-group">
-            <label for="newDeviceColorInput">Цвет устройства:</label>
-            <input id="newDeviceColorInput" type="color" v-model="newDeviceColor" />
-          </div>
-          <button @click="addDevice" class="btn btn-primary">➕ Добавить устройство</button>
         </section>
       </aside>
 
