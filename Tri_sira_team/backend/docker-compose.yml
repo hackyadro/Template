@@ -6,6 +6,8 @@ services:
       - mosquitto
     ports: 
       - ${SERVICE_PORT}:${SERVICE_INTERNAL_PORT} # внешний:внутренний
+    volumes:
+      - ./data:/app/data
     env_file:
       - .env
   mosquitto:
@@ -18,8 +20,3 @@ services:
       - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
     env_file:
       - .env
-  temp_publisher:
-    build: ./
-    command: ./temp_publisher
-    depends_on:
-      - mosquitto
