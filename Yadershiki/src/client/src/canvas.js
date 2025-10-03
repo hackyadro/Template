@@ -14,7 +14,7 @@ export async function setUpStage(containerId) {
 
 	const origin = {x: 0, y: 0};
 	const center = {x: stage.width() / 2, y: stage.height() / 2};
-	const step = 10;
+	const step = 25;
 
 	const getGridParams = () => ({ origin, center, step });
 
@@ -22,12 +22,11 @@ export async function setUpStage(containerId) {
 		origin, center, step,
 		{x: 0, y: 0, name: 'You', fill: 'green'}
 	);
-	const start = {x: 0, y: 0, name: 'Start', fill: 'red'};
 
 	const data = await fetchBeacons();
 	const points = drawPoints(
 		origin, center, step,
-		[start, ...data]
+		data
 	);
 		
 	points.add(user);
