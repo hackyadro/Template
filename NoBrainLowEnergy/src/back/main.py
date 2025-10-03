@@ -8,6 +8,7 @@ from pathlib import Path
 import logging
 from datetime import datetime
 import os
+import sys
 
 from beacon_loader import load_beacon_positions
 from mqtt_client import MQTTClient
@@ -22,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 # Global MQTT client instance
 mqtt_client = None
-SEARCH_ROOT = Path(__file__).resolve()
+SEARCH_ROOT = Path(__file__).resolve().parent
 BEACON_FILE_PATH = SEARCH_ROOT / "cfg" / "locations.beacons"
 
 @asynccontextmanager
