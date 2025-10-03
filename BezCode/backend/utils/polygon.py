@@ -63,10 +63,10 @@ def distance_point_to_segment(point, seg_start, seg_end):
     
     return math.sqrt((x - closest_x)**2 + (y - closest_y)**2), (closest_x, closest_y)
 
-def move_point_inside(point, polygon, margin = 0.4):
+def move_point_inside(point, polygon, margin = 0.1):
     """
     Если точка снаружи многоугольника, сдвигает её внутрь.
-    margin - отступ от границы (по умолчанию 0.4)
+    margin - отступ от границы (по умолчанию 0.1)
     """
     if is_point_inside_polygon(point, polygon):
         return point
