@@ -16,6 +16,7 @@ class Distance_model:
     def __init__(self):
         # Environmental constant (path-loss exponent). Typical indoor: 2.0 - 3.0
         self.env_const = 3.5
+        self.prev_pos = None
         print("Distance model constructor do smth")
 
     def dist(self, rssi: float, baseline: float) -> float:
@@ -32,9 +33,17 @@ class Distance_model:
     def get_position_from_message(self, message: ReceivedMQTTMessage, beacons: dict[str, tuple[float, float]]) -> tuple[float, float]:
         """Estimate position directly from an incoming MQTT message and known beacon positions."""
         distances = self.Calc(message)
-        return self.position_from_distances_trilat(distances, beacons)
-        # return self.position_from_distances_numpy(distances, beacons)
+        # return self.position_from_distances_trilat(distances, beacons)
+        position = self.position_from_distances_numpy(distances, beacons)
+        if self.prev_pos is None:
+            self.prev_pos = position
+            return position
 
+        if self.prev_pos[0] - position[0] > 6 or self.prev_pos[1] - position[1] > 6:
+            return self.prev_pos
+
+        self.prev_pos = position
+        return position
 
     def Calc(self, message: ReceivedMQTTMessage) -> dict[str, list[float] | list[str]]:
         """Calculate distance for all beacons in the incoming payload.
