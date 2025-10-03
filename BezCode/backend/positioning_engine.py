@@ -46,7 +46,7 @@ class PositioningEngine:
                     self.msg_buffer[key]["rssi_sum"] += value
                     self.msg_buffer_count += 1
 
-                if self.msg_buffer_count < 5:
+                if self.msg_buffer_count < 10:
                     return
                 
                 avg_beacons_rssi: dict[str, float] = {}
