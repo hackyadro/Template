@@ -1,31 +1,21 @@
 """
-Продвинутый алгоритм позиционирования с:
+Оптимизированный алгоритм позиционирования с:
 - Калибровкой alpha/beta по известной точке
 - Робастной оценкой (Huber)
 - Нелинейным МНК (Levenberg-Marquardt) с якорем к предыдущей позиции
 - Взвешиванием по количеству проб и геометрии
-- Поддержкой отчётов с MAC-адресами маяков и samples
 """
 
 import math
-from typing import Dict, Tuple, List, Optional
+from typing import Dict, Tuple, Optional
 import numpy as np
-
-
-class BeaconData:
-    """Данные маяка для расчётов"""
-    def __init__(self, name: str, x: float, y: float):
-        self.name = name
-        self.x = x
-        self.y = y
 
 
 class AdvancedPositioningEngine:
     """Продвинутый движок позиционирования с калибровкой и робастной оценкой"""
 
-    # Калибровочные данные для точки (0, 0)
+    # Калибровочные данные для базовой точки
     # MAC -> {'name': beacon_name, 'rssi': среднее_значение}
-    # TODO ты изначально должен как-то передать данные о положении маяков, распарсить и заполнить эту коллекцию
     CALIBRATION_MEASUREMENTS = {
         '88:57:21:23:34:CA': {'name': 'beacon_1', 'rssi': -63.3},
         '84:1F:E8:09:88:96': {'name': 'beacon_2', 'rssi': -57.9},
@@ -35,15 +25,34 @@ class AdvancedPositioningEngine:
         '88:57:21:23:3F:6E': {'name': 'beacon_6', 'rssi': -78.0},
         '4C:C3:82:C4:27:AA': {'name': 'beacon_7', 'rssi': -93.5},
     }
+
     def __init__(self, base_point: Tuple[float, float] = (0.0, 0.0)):
+        """
+        Инициализация движка позиционирования.
+
+        Args:
+            base_point: Базовая калибровочная точка (base_x, base_y) из БД
+        """
         self.alpha = -59.0  # RSSI на 1м (будет калиброваться)
         self.beta = 2.0     # Path loss exponent (будет калиброваться)
         self.prev_position: Optional[Tuple[float, float]] = None
-        self.known_calibration_point = base_point  # Базовая калибровочная точка из БД
+        self.known_calibration_point = base_point
 
     @staticmethod
     def rssi_to_distance(rssi: float, alpha: float, beta: float) -> float:
-        """RSSI -> расстояние: d = 10^((alpha - rssi) / (10*beta))"""
+        """
+        Конвертация RSSI в расстояние.
+
+        Формула: d = 10^((alpha - rssi) / (10*beta))
+
+        Args:
+            rssi: Уровень сигнала в дБм
+            alpha: RSSI на 1 метре
+            beta: Path loss exponent
+
+        Returns:
+            Расстояние в метрах
+        """
         return 10.0 ** ((alpha - rssi) / (10.0 * beta))
 
     @staticmethod
@@ -51,29 +60,28 @@ class AdvancedPositioningEngine:
         beacons: Dict[str, Tuple[float, float]],
         measurements: Dict[str, Dict[str, float]],
         known_position: Tuple[float, float],
-        initial_beta: float = 2.0,
-        exclude: Optional[List[str]] = None
+        initial_beta: float = 2.0
     ) -> Tuple[float, float]:
         """
-        Калибровка alpha и beta по известной точке с робастной оценкой.
+        Калибровка параметров распространения сигнала по известной точке.
+        Использует робастную оценку (Huber) для устойчивости к выбросам.
 
         Args:
-            beacons: {beacon_name: (x, y)}
-            measurements: {mac: {'name': name, 'rssi': value}}
-            known_position: (x, y) известная позиция для калибровки
-            initial_beta: начальное значение beta
-            exclude: список имён маяков для исключения
+            beacons: {beacon_name: (x, y)} - координаты маяков
+            measurements: {mac: {'name': name, 'rssi': value}} - измерения RSSI
+            known_position: (x, y) - известная позиция для калибровки
+            initial_beta: Начальное значение beta
 
         Returns:
-            (alpha, beta)
+            (alpha, beta) - калиброванные параметры
         """
         x0, y0 = known_position
         xs, ys = [], []
-        excl = set(exclude or [])
 
+        # Собираем данные для регрессии
         for info in measurements.values():
             name = info['name']
-            if name not in beacons or name in excl:
+            if name not in beacons:
                 continue
             rssi = float(info['rssi'])
             bx, by = beacons[name]
@@ -109,7 +117,7 @@ class AdvancedPositioningEngine:
     def solve_position_nlls(
         beacons_xy: Dict[str, Tuple[float, float]],
         distances_by_name: Dict[str, float],
-        weights_by_name: Optional[Dict[str, float]],
+        weights_by_name: Dict[str, float],
         start_xy: Tuple[float, float],
         prior_xy: Tuple[float, float],
         prior_weight: float = 0.1,
@@ -120,26 +128,23 @@ class AdvancedPositioningEngine:
         Нелинейная МНК (Levenberg-Marquardt) с якорем к предыдущей позиции.
 
         Args:
-            beacons_xy: {beacon_name: (x, y)}
-            distances_by_name: {beacon_name: distance}
-            weights_by_name: {beacon_name: weight} или None
-            start_xy: начальная позиция для итераций
-            prior_xy: якорная позиция (предыдущая)
-            prior_weight: сила якоря (regularization)
-            iters: максимум итераций
-            lm_lambda: параметр LM
+            beacons_xy: {beacon_name: (x, y)} - координаты маяков
+            distances_by_name: {beacon_name: distance} - измеренные расстояния
+            weights_by_name: {beacon_name: weight} - веса измерений
+            start_xy: Начальная позиция для итераций
+            prior_xy: Якорная позиция (предыдущая)
+            prior_weight: Сила якоря (regularization)
+            iters: Максимум итераций
+            lm_lambda: Параметр Levenberg-Marquardt
 
         Returns:
-            (x, y) вычисленная позиция
+            (x, y) - вычисленная позиция
         """
         x, y = start_xy
         names = [n for n in beacons_xy if n in distances_by_name]
 
         if len(names) < 3:
             raise ValueError("Меньше 3 маяков для трилатерации")
-
-        if weights_by_name is None:
-            weights_by_name = {n: 1.0 for n in names}
 
         # Медиана дистанций для геометрического веса
         dvals = [distances_by_name[n] for n in names]
@@ -200,17 +205,13 @@ class AdvancedPositioningEngine:
 
         return x, y
 
-    def calibrate(
-        self,
-        beacons: Dict[str, Tuple[float, float]],
-        beta_fixed: Optional[float] = None
-    ):
+    def calibrate(self, beacons: Dict[str, Tuple[float, float]], beta_fixed: Optional[float] = None):
         """
         Выполнить калибровку alpha/beta по калибровочным данным.
 
         Args:
-            beacons: {beacon_name: (x, y)}
-            beta_fixed: если задано, фиксировать beta этим значением
+            beacons: {beacon_name: (x, y)} - координаты маяков
+            beta_fixed: Если задано, фиксировать beta этим значением
         """
         if beta_fixed is not None:
             # Оценить только alpha при фиксированном beta
@@ -238,91 +239,6 @@ class AdvancedPositioningEngine:
                 initial_beta=2.0
             )
 
-    def calculate_position(
-        self,
-        signals: List[Tuple[str, int]],
-        beacons_map: Dict[str, Tuple[float, float]],
-        rssi_threshold: float = -100.0,
-        min_distance: float = 0.5,
-        max_distance: float = 100.0,
-        prior_weight: float = 0.1
-    ) -> Optional[Tuple[float, float, float, str]]:
-        """
-        Вычислить позицию по сигналам от маяков.
-
-        Args:
-            signals: [(beacon_name, rssi), ...]
-            beacons_map: {beacon_name: (x, y)}
-            rssi_threshold: минимальный RSSI для учёта
-            min_distance: минимальная дистанция (метры)
-            max_distance: максимальная дистанция (метры)
-            prior_weight: сила якоря к предыдущей позиции
-
-        Returns:
-            (x, y, accuracy, algorithm) или None
-        """
-        # Конвертируем RSSI -> дистанции
-        distances: Dict[str, float] = {}
-        weights: Dict[str, float] = {}
-
-        for beacon_name, rssi in signals:
-            if rssi < rssi_threshold:
-                continue
-            if beacon_name not in beacons_map:
-                continue
-
-            d = self.rssi_to_distance(rssi, self.alpha, self.beta)
-            d = max(min_distance, min(max_distance, d))
-            distances[beacon_name] = d
-
-            # Вес: обратно пропорционален квадрату дистанции
-            weights[beacon_name] = 1.0 / max(0.5, d) ** 2
-
-        if len(distances) < 3:
-            return None
-
-        # Стартовая позиция — предыдущая или центр маяков
-        if self.prev_position:
-            start_xy = self.prev_position
-            prior_xy = self.prev_position
-        else:
-            # Центроид маяков
-            used_beacons = [beacons_map[n] for n in distances.keys()]
-            start_xy = (
-                sum(b[0] for b in used_beacons) / len(used_beacons),
-                sum(b[1] for b in used_beacons) / len(used_beacons)
-            )
-            prior_xy = start_xy
-
-        try:
-            x, y = self.solve_position_nlls(
-                beacons_map,
-                distances,
-                weights,
-                start_xy=start_xy,
-                prior_xy=prior_xy,
-                prior_weight=prior_weight,
-                iters=30,
-                lm_lambda=1e-3
-            )
-
-            # Обновляем предыдущую позицию
-            self.prev_position = (x, y)
-
-            # Вычисляем accuracy как среднюю ошибку
-            errors = []
-            for name, d_measured in distances.items():
-                bx, by = beacons_map[name]
-                d_calc = math.hypot(x - bx, y - by)
-                errors.append(abs(d_calc - d_measured))
-
-            accuracy = sum(errors) / len(errors) if errors else 0.0
-
-            return x, y, accuracy, "nlls_lm"
-
-        except Exception:
-            return None
-
     def calculate_position_with_samples(
         self,
         report_data: Dict[str, Dict[str, float]],
@@ -333,15 +249,15 @@ class AdvancedPositioningEngine:
         prior_weight: float = 0.1
     ) -> Optional[Tuple[float, float, float, str]]:
         """
-        Вычислить позицию по отчёту с учётом samples.
+        Вычислить позицию по отчёту с учётом количества измерений (samples).
 
         Args:
             report_data: {beacon_name: {'rssi': value, 'samples': count}}
-            beacons_map: {beacon_name: (x, y)}
-            rssi_threshold: минимальный RSSI для учёта
-            min_distance: минимальная дистанция (метры)
-            max_distance: максимальная дистанция (метры)
-            prior_weight: сила якоря к предыдущей позиции
+            beacons_map: {beacon_name: (x, y)} - координаты маяков
+            rssi_threshold: Минимальный RSSI для учёта
+            min_distance: Минимальная дистанция (метры)
+            max_distance: Максимальная дистанция (метры)
+            prior_weight: Сила якоря к предыдущей позиции
 
         Returns:
             (x, y, accuracy, algorithm) или None
@@ -349,6 +265,7 @@ class AdvancedPositioningEngine:
         distances: Dict[str, float] = {}
         weights: Dict[str, float] = {}
 
+        # Конвертируем RSSI -> дистанции с весами
         for beacon_name, info in report_data.items():
             rssi = float(info.get('rssi', -999))
             samples = int(info.get('samples', 1))
@@ -358,11 +275,12 @@ class AdvancedPositioningEngine:
             if beacon_name not in beacons_map:
                 continue
 
+            # RSSI -> расстояние
             d = self.rssi_to_distance(rssi, self.alpha, self.beta)
             d = max(min_distance, min(max_distance, d))
             distances[beacon_name] = d
 
-            # Вес по количеству проб + геометрический вес
+            # Вес: по количеству проб + геометрический вес
             w_samp = 1.0 + 0.25 * max(0, samples - 1)
             w_geo = 1.0 / max(0.5, d) ** 2
             weights[beacon_name] = w_samp * w_geo
@@ -370,7 +288,7 @@ class AdvancedPositioningEngine:
         if len(distances) < 3:
             return None
 
-        # Стартовая позиция
+        # Определяем стартовую позицию
         if self.prev_position:
             start_xy = self.prev_position
             prior_xy = self.prev_position
@@ -379,6 +297,7 @@ class AdvancedPositioningEngine:
             prior_xy = self.known_calibration_point
 
         try:
+            # Решаем задачу позиционирования
             x, y = self.solve_position_nlls(
                 beacons_map,
                 distances,
@@ -390,9 +309,10 @@ class AdvancedPositioningEngine:
                 lm_lambda=1e-3
             )
 
+            # Обновляем предыдущую позицию для следующей итерации
             self.prev_position = (x, y)
 
-            # Вычисляем accuracy
+            # Вычисляем accuracy как среднюю ошибку
             errors = []
             for name, d_measured in distances.items():
                 bx, by = beacons_map[name]
@@ -405,43 +325,3 @@ class AdvancedPositioningEngine:
 
         except Exception:
             return None
-
-    # TODO: здесь ты должен парсить именно так, как приходит сюда пакет
-    # если ты отправляешь инфу именно так, то ОК... ПРОСТО ПРОВЕРЬ
-    @staticmethod
-    def parse_report_block(block: str) -> Dict[str, Dict[str, float]]:
-        """
-        Парсит отчёт вида:
-        beacon_1;-63.3;MAC;samples=3
-        -> {beacon_name: {'rssi': -63.3, 'samples': 3, 'mac': 'MAC'}}
-        """
-        data: Dict[str, Dict[str, float]] = {}
-        for line in block.splitlines():
-            line = line.strip()
-            if not line or line.startswith('===') or line.startswith('Отчет'):
-                continue
-            parts = line.split(';')
-            if len(parts) < 4:
-                continue
-
-            name = parts[0].strip()
-            try:
-                rssi = float(parts[1].strip())
-            except ValueError:
-                continue
-
-            mac = parts[2].strip()
-            samples = 1
-            try:
-                if parts[3].startswith('samples='):
-                    samples = int(parts[3].split('=')[1])
-            except Exception:
-                pass
-
-            data[name] = {'rssi': rssi, 'samples': samples, 'mac': mac}
-
-        return data
-
-    def reset_position(self):
-        """Сбросить предыдущую позицию (для нового трека)"""
-        self.prev_position = None
