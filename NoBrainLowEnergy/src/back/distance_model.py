@@ -1,4 +1,5 @@
 import math
+import statistics
 import ujson as json
 
 try:
@@ -8,6 +9,8 @@ except Exception:  # pragma: no cover - optional dependency guard
 
 from models import ReceivedMQTTMessage
 
+
+Bounds = tuple[float, float, float, float]
 
 class Distance_model:
     def __init__(self):
@@ -289,5 +292,195 @@ class Distance_model:
             return (float(centroid[0]), float(centroid[1]))
 
         return (float(solution[0]), float(solution[1]))
+
+
+class RobustDistanceModel(Distance_model):
+    """Improved distance-to-position estimator with iterative, robust fitting."""
+
+    def __init__(
+        self,
+        env_const: float = 2.2,
+        *,
+        bounds_margin: float = 1.0,
+        max_iterations: int = 15,
+        tolerance: float = 1e-3,
+        huber_delta: float = 0.75,
+        max_step: float = 1.5,
+        max_anchors: int = 6,
+    ) -> None:
+        super().__init__()
+        self.env_const = float(env_const)
+        self._bounds_margin = float(bounds_margin)
+        self._max_iterations = int(max_iterations)
+        self._tolerance = float(tolerance)
+        self._huber_delta = float(huber_delta)
+        self._max_step = float(max_step)
+        self._max_anchors = max(3, int(max_anchors))
+        self._ridge = 1e-3
+
+    def get_position_from_message(
+        self,
+        message: ReceivedMQTTMessage,
+        beacons: dict[str, tuple[float, float]],
+    ) -> tuple[float, float]:
+        distances = self.Calc(message)
+        return self.position_from_distances_robust(distances, beacons)
+
+    def position_from_distances_robust(
+        self,
+        distances: dict[str, list[float] | list[str]],
+        beacons: dict[str, tuple[float, float]],
+    ) -> tuple[float, float]:
+        if not isinstance(distances, dict):
+            return super().position_from_distances(distances, beacons)
+
+        names = distances.get("names") or []
+        dist_values = distances.get("distances") or []
+
+        anchors: list[tuple[float, float, float]] = []
+        for name, dist in zip(names, dist_values):
+            key = str(name)
+            try:
+                coord = beacons[key]
+            except Exception:
+                continue
+
+            try:
+                dist_f = float(dist)
+            except Exception:
+                continue
+
+            if not math.isfinite(dist_f) or dist_f <= 0.0:
+                continue
+
+            x = float(coord[0])
+            y = float(coord[1])
+            anchors.append((x, y, dist_f))
+
+        if len(anchors) < 3:
+            return super().position_from_distances(distances, beacons)
+
+        anchors.sort(key=lambda item: item[2])
+        anchors = anchors[: self._max_anchors]
+
+        if len(anchors) >= 5:
+            raw_dists = [entry[2] for entry in anchors]
+            median = statistics.median(raw_dists)
+            mad = statistics.median(abs(d - median) for d in raw_dists) or 1.0
+            cutoff = median + 3.5 * mad
+            filtered = [entry for entry in anchors if entry[2] <= cutoff]
+            if len(filtered) >= 3:
+                anchors = filtered
+
+        x, y = self._initial_guess(anchors)
+        bounds = self._infer_bounds(beacons)
+
+        for _ in range(self._max_iterations):
+            j00 = j01 = j11 = 0.0
+            g0 = g1 = 0.0
+            total_weight = 0.0
+
+            for xi, yi, di in anchors:
+                dx = x - xi
+                dy = y - yi
+                range_est = math.hypot(dx, dy)
+                if range_est < 1e-6:
+                    range_est = 1e-6
+
+                residual = range_est - di
+                abs_res = abs(residual)
+
+                weight = 1.0 / max(di, 0.5)
+                if abs_res > self._huber_delta:
+                    weight *= self._huber_delta / abs_res
+
+                jac0 = dx / range_est
+                jac1 = dy / range_est
+
+                j00 += weight * jac0 * jac0
+                j01 += weight * jac0 * jac1
+                j11 += weight * jac1 * jac1
+                g0 += weight * jac0 * residual
+                g1 += weight * jac1 * residual
+                total_weight += weight
+
+            if total_weight == 0.0:
+                break
+
+            det = j00 * j11 - j01 * j01
+            if not math.isfinite(det) or abs(det) < 1e-9:
+                j00 += self._ridge
+                j11 += self._ridge
+                det = j00 * j11 - j01 * j01
+
+            if not math.isfinite(det) or abs(det) < 1e-12:
+                break
+
+            step_x = -(j11 * g0 - j01 * g1) / det
+            step_y = -(-j01 * g0 + j00 * g1) / det
+
+            if not math.isfinite(step_x) or not math.isfinite(step_y):
+                break
+
+            step_norm = max(abs(step_x), abs(step_y))
+            if step_norm > self._max_step:
+                scale = self._max_step / step_norm
+                step_x *= scale
+                step_y *= scale
+
+            x += step_x
+            y += step_y
+
+            if bounds is not None:
+                x = min(max(x, bounds[0]), bounds[1])
+                y = min(max(y, bounds[2]), bounds[3])
+
+            if max(abs(step_x), abs(step_y)) < self._tolerance:
+                break
+
+        if not math.isfinite(x) or not math.isfinite(y):
+            return super().position_from_distances(distances, beacons)
+
+        return (float(x), float(y))
+
+    def _initial_guess(self, anchors: list[tuple[float, float, float]]) -> tuple[float, float]:
+        weight_sum = 0.0
+        x_acc = 0.0
+        y_acc = 0.0
+        for x, y, d in anchors:
+            weight = 1.0 / max(d * d, 1e-3)
+            weight_sum += weight
+            x_acc += weight * x
+            y_acc += weight * y
+
+        if weight_sum == 0.0:
+            mean_x = sum(x for x, _, _ in anchors) / len(anchors)
+            mean_y = sum(y for _, y, _ in anchors) / len(anchors)
+            return (mean_x, mean_y)
+
+        return (x_acc / weight_sum, y_acc / weight_sum)
+
+    def _infer_bounds(self, beacons: dict[str, tuple[float, float]]) -> Bounds | None:
+        if not beacons:
+            return None
+
+        xs = []
+        ys = []
+        for coord in beacons.values():
+            try:
+                xs.append(float(coord[0]))
+                ys.append(float(coord[1]))
+            except Exception:
+                continue
+
+        if not xs or not ys:
+            return None
+
+        margin = self._bounds_margin
+        min_x = min(xs) - margin
+        max_x = max(xs) + margin
+        min_y = min(ys) - margin
+        max_y = max(ys) + margin
+        return (min_x, max_x, min_y, max_y)
 
 
