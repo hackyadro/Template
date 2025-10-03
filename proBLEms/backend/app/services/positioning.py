@@ -57,7 +57,8 @@ class PositioningService:
         beacon_map = {str(b["id"]): b for b in beacons}
 
         # нормализуем ключи измерений (поддержим и старое 'name' на всякий случай)
-        usable = [r for r in readings if r["name"] in beacon_map]
+        usable = [r for r in readings if r["name"] in beacon_map and r[
+            "distance"] <= 20.0]
 
         # минимально 3
         if len(usable) < 3:
@@ -85,46 +86,8 @@ class PositioningService:
         rmse = float(np.sqrt(np.mean((pred - dists) ** 2)))
         return {"x": float(x), "y": float(y), "accuracy": float(rmse)}
 
-    def _weighted_least_squares_trilateration(
-            self, pts: List[Tuple[float, float]], dists: List[float]
-    ) -> Tuple[float, float]:
-        """
-        Линеаризация «относительно опорного маяка» + ВЗВЕШЕННАЯ МНК (веса ~ 1/d^2).
-        ВАЖНО: решение даёт абсолютные x,y — ничего «добавлять» к опорной точке не нужно.
-        """
-        if len(pts) < 3:
-            raise ValueError("Need >= 3 points")
-
-        # опорный — ближайший (минимум влияния ошибки)
-        ref = int(np.argmin(dists))
-        x1, y1 = pts[ref]
-        d1 = dists[ref]
-
-        A = []
-        b = []
-        w = []
-
-        eps = 1e-6
-        for i, ((xi, yi), di) in enumerate(zip(pts, dists)):
-            if i == ref:
-                continue
-            A.append([2.0 * (xi - x1), 2.0 * (yi - y1)])
-            b.append(di ** 2 - d1 ** 2 - xi ** 2 + x1 ** 2 - yi ** 2 + y1 ** 2)
-            w.append(1.0 / max(di, eps) ** 2)  # ближние — тяжелее
-
-        A = np.asarray(A, dtype=float)
-        b = np.asarray(b, dtype=float).reshape(-1, 1)
-        W = np.diag(w)
-
-        # решаем (A^T W A) x = A^T W b
-        ATA = A.T @ W @ A
-        ATb = A.T @ W @ b
-        x_hat = np.linalg.solve(ATA, ATb)  # если синг., выкинет LinAlgError
-        x, y = x_hat.flatten().tolist()
-        return x, y  # уже абсолютные координаты
-
     def _gauss_newton_wls(self, pts: np.ndarray, dists: np.ndarray,
-                          iters: int = 10) -> Tuple[float, float]:
+                          iters: int = 30) -> Tuple[float, float]:
         """
         Нелинейный WLS:
           минимизируем sum(w_i * (||p - P_i|| - d_i)^2),
@@ -147,19 +110,19 @@ class PositioningService:
             r = ri - dists
 
             # Якобиан (dr/dx, dr/dy) для каждого i
-            J = np.stack([dx / ri_safe, dy / ri_safe], axis=1)
+            J = np.stack([dx / ri_safe, dy / ri_safe], axis=1) # nx2
 
             # веса
-            W = np.diag(1.0 / np.maximum(dists, eps) ** 2)
+            W = np.diag(1.0 / np.maximum(dists, eps) ** 2) # nxn
 
             # шаг ГН: (J^T W J) Δ = - J^T W r
-            JT_W = J.T @ W
-            H = JT_W @ J
-            g = JT_W @ r
+            JT_W = J.T @ W # 2xn
+            H = JT_W @ J # 2x2
+            g = JT_W @ r # 2x1
 
             # регуляризация на случай плохой геометрии
             lam = 1e-3
-            H_reg = H + lam * np.eye(2)
+            H_reg = H + lam * np.eye(2) # 2x2
 
             try:
                 delta = -np.linalg.solve(H_reg, g)
