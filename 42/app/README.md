@@ -28,6 +28,12 @@ sudo ufw allow 1883/tcp
 sudo ufw/allow 8501/tcp
 ```
 
+В случае если используется порт
+
+```bash
+sudo systemctl stop mosquitto
+```
+
 подключиться в свою сеть и узнать ip
 ```bash
 hostname -I
