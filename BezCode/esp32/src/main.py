@@ -105,7 +105,7 @@ def main():
             if len(resout) >= 4:
                 resout = dict(map(lambda x: (x[0], x[1]/count[x[0]]), resout.items()))
                 print(resout)
-                client.publish(b"ble/beacons/raw", str(resout).encode())
+                client.publish(b"ble/beacons/raw", json.dumps(resout).encode())
                 resout.clear()
                 count.clear()
     except KeyboardInterrupt:
