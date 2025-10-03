@@ -22,7 +22,7 @@ ESP32 начнёт публиковать JSON в топик "beacons".
 Запуск:
 ```bash
 cd /path/to/your/repo
-docker compose -f CR7/CR7/docker-compose.yml up -d --build
+docker compose -f docker-compose.yml up -d --build
 ```
 
 Что поднимется:
