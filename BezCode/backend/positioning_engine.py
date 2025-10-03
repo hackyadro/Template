@@ -13,7 +13,8 @@ class PositioningEngine:
         self.current_position = {"x": 2.5, "y": 2.5}
         self.used_beacons = []
         self._smoothing_alpha = 0.3
-        
+        self._current_max_delta = 3.0
+
         self.msg_buffer_count = 0
         self.msg_buffer: dict[str, dict[str, float]] = {}
         self.beacon_positions = self.load_beacon_positions()
@@ -76,7 +77,7 @@ class PositioningEngine:
                     self.msg_buffer[key]["rssi_sum"] += value
                     self.msg_buffer_count += 1
 
-                if self.msg_buffer_count < 3:
+                if self.msg_buffer_count < 5:
                     return
                 
                 avg_beacons_rssi: dict[str, float] = {}
@@ -117,6 +118,28 @@ class PositioningEngine:
                         #     self._smoothing_alpha * position['y'] +
                         #     (1 - self._smoothing_alpha) * self.current_position['y']
                         # )
+                        
+                        delta_x = position['x'] - self.current_position['x']
+                        delta_y = position['y'] - self.current_position['y']
+                        distance = (delta_x**2 + delta_y**2)**0.5
+                        
+                        
+                        base_max_delta = 3.0  # Базовое максимальное смещение
+                        acceleration_factor = 0.3  # Коэффициент ускорения
+                        decay_factor = 0.5  # Коэффициент замедления
+                        
+                        
+                        if distance > self._current_max_delta:
+                            
+                            self._current_max_delta = min(10.0, self._current_max_delta * (1 + acceleration_factor))
+                            
+                            scale_factor = self._current_max_delta / distance
+                            position['x'] = self.current_position['x'] + delta_x * scale_factor
+                            position['y'] = self.current_position['y'] + delta_y * scale_factor
+                            print(f"🔄 Сглажено сильное смещение: {distance:.2f} > {self._current_max_delta:.2f}")
+                            print(f"📈 Увеличена максимальная дельта до: {self._current_max_delta:.2f}")
+                        else:
+                            self._current_max_delta = max(base_max_delta, self._current_max_delta * decay_factor)
                         self.current_position = {
                             "x": round(position['x'], 2), 
                             "y": round(position['y'], 2), 
