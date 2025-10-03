@@ -138,6 +138,8 @@ class DeviceCreateRequest(BaseModel):
     poll_frequency: float = 1.0
     write_road: bool = True
     color: str = '#3b82f6'
+    base_x: float = 0.0
+    base_y: float = 0.0
 
 
 class DeviceUpdateRequest(BaseModel):
@@ -147,6 +149,8 @@ class DeviceUpdateRequest(BaseModel):
     poll_frequency: Optional[float] = None
     write_road: Optional[bool] = None
     color: Optional[str] = None
+    base_x: Optional[float] = None
+    base_y: Optional[float] = None
 
 
 class DeviceResponse(BaseModel):
@@ -158,6 +162,8 @@ class DeviceResponse(BaseModel):
     poll_frequency: float
     write_road: bool
     color: str
+    base_x: float
+    base_y: float
     created_at: datetime
     updated_at: datetime
 

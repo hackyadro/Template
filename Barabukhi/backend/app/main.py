@@ -426,7 +426,25 @@ async def send_signal(request: SendSignalRequest, db: AsyncSession = Depends(get
         )
         device_id = device_insert.scalar()
         write_road = True
-        road_session_id = None
+
+        # Создаём road_session для нового устройства
+        session_name = f"road_{int(time.time())}"
+        session_result = await db.execute(
+            text("""
+                INSERT INTO road_sessions (device_id, name, is_active)
+                VALUES (:device_id, :name, true)
+                RETURNING id
+            """),
+            {"device_id": device_id, "name": session_name}
+        )
+        road_session_id = session_result.scalar()
+
+        # Обновляем current_road_session_id в devices
+        await db.execute(
+            text("UPDATE devices SET current_road_session_id = :session_id WHERE id = :device_id"),
+            {"session_id": road_session_id, "device_id": device_id}
+        )
+
         await db.commit()
     else:
         device_id = device.id
@@ -580,7 +598,7 @@ async def websocket_endpoint(websocket: WebSocket, db: AsyncSession = Depends(ge
                 if msg_type == "get_all_device":
                     devices_result = await db.execute(
                         text("""
-                            SELECT id, name, mac, map_id, poll_frequency, write_road, color
+                            SELECT id, name, mac, map_id, poll_frequency, write_road, color, base_x, base_y
                             FROM devices
                             ORDER BY created_at DESC
                         """)
@@ -595,7 +613,9 @@ async def websocket_endpoint(websocket: WebSocket, db: AsyncSession = Depends(ge
                             "map_set": d.map_id,
                             "freq": float(d.poll_frequency),
                             "write_road": d.write_road,
-                            "color": d.color
+                            "color": d.color,
+                            "base_x": float(d.base_x),
+                            "base_y": float(d.base_y)
                         }
                         for d in devices
                     ]
@@ -772,7 +792,7 @@ async def websocket_endpoint(websocket: WebSocket, db: AsyncSession = Depends(ge
                     # Отправляем обновлённый список устройств
                     devices_result = await db.execute(
                         text("""
-                            SELECT id, name, mac, map_id, poll_frequency, write_road, color
+                            SELECT id, name, mac, map_id, poll_frequency, write_road, color, base_x, base_y
                             FROM devices
                             ORDER BY created_at DESC
                         """)
@@ -787,7 +807,9 @@ async def websocket_endpoint(websocket: WebSocket, db: AsyncSession = Depends(ge
                             "map_set": d.map_id,
                             "freq": float(d.poll_frequency),
                             "write_road": d.write_road,
-                            "color": d.color
+                            "color": d.color,
+                            "base_x": float(d.base_x),
+                            "base_y": float(d.base_y)
                         }
                         for d in devices
                     ]
@@ -820,7 +842,7 @@ async def websocket_endpoint(websocket: WebSocket, db: AsyncSession = Depends(ge
                     # Отправляем обновлённый список устройств
                     devices_result = await db.execute(
                         text("""
-                            SELECT id, name, mac, map_id, poll_frequency, write_road, color
+                            SELECT id, name, mac, map_id, poll_frequency, write_road, color, base_x, base_y
                             FROM devices
                             ORDER BY created_at DESC
                         """)
@@ -835,7 +857,9 @@ async def websocket_endpoint(websocket: WebSocket, db: AsyncSession = Depends(ge
                             "map_set": d.map_id,
                             "freq": float(d.poll_frequency),
                             "write_road": d.write_road,
-                            "color": d.color
+                            "color": d.color,
+                            "base_x": float(d.base_x),
+                            "base_y": float(d.base_y)
                         }
                         for d in devices
                     ]
@@ -941,7 +965,7 @@ async def websocket_endpoint(websocket: WebSocket, db: AsyncSession = Depends(ge
                     # Отправляем обновлённый список устройств
                     devices_result = await db.execute(
                         text("""
-                            SELECT id, name, mac, map_id, poll_frequency, write_road, color
+                            SELECT id, name, mac, map_id, poll_frequency, write_road, color, base_x, base_y
                             FROM devices
                             ORDER BY created_at DESC
                         """)
@@ -956,7 +980,60 @@ async def websocket_endpoint(websocket: WebSocket, db: AsyncSession = Depends(ge
                             "map_set": d.map_id,
                             "freq": float(d.poll_frequency),
                             "write_road": d.write_road,
-                            "color": d.color
+                            "color": d.color,
+                            "base_x": float(d.base_x),
+                            "base_y": float(d.base_y)
+                        }
+                        for d in devices
+                    ]
+
+                    await websocket.send_text(json.dumps({
+                        "type": "all_device",
+                        "data": devices_list
+                    }))
+
+                # Обработка set_base_cord
+                elif msg_type == "set_base_cord":
+                    data = message.get("data", {})
+                    mac = data.get("mac")
+                    x = data.get("x")
+                    y = data.get("y")
+
+                    if not mac or x is None or y is None:
+                        await websocket.send_text(json.dumps({
+                            "type": "error",
+                            "data": {"message": "mac, x and y are required"}
+                        }))
+                        continue
+
+                    # Обновляем базовые координаты устройства
+                    await db.execute(
+                        text("UPDATE devices SET base_x = :x, base_y = :y WHERE mac = :mac"),
+                        {"x": float(x), "y": float(y), "mac": mac}
+                    )
+                    await db.commit()
+
+                    # Отправляем обновлённый список устройств
+                    devices_result = await db.execute(
+                        text("""
+                            SELECT id, name, mac, map_id, poll_frequency, write_road, color, base_x, base_y
+                            FROM devices
+                            ORDER BY created_at DESC
+                        """)
+                    )
+                    devices = devices_result.fetchall()
+
+                    devices_list = [
+                        {
+                            "id": d.id,
+                            "name": d.name,
+                            "mac": d.mac,
+                            "map_set": d.map_id,
+                            "freq": float(d.poll_frequency),
+                            "write_road": d.write_road,
+                            "color": d.color,
+                            "base_x": float(d.base_x),
+                            "base_y": float(d.base_y)
                         }
                         for d in devices
                     ]
@@ -1188,7 +1265,7 @@ async def get_devices(db: AsyncSession = Depends(get_db)):
     """Получить список всех устройств"""
     result = await db.execute(
         text("""
-            SELECT id, name, mac, map_id, poll_frequency, write_road, color, created_at, updated_at
+            SELECT id, name, mac, map_id, poll_frequency, write_road, color, base_x, base_y, created_at, updated_at
             FROM devices
             ORDER BY created_at DESC
         """)
@@ -1204,6 +1281,8 @@ async def get_devices(db: AsyncSession = Depends(get_db)):
             poll_frequency=float(d.poll_frequency),
             write_road=d.write_road,
             color=d.color,
+            base_x=float(d.base_x),
+            base_y=float(d.base_y),
             created_at=d.created_at,
             updated_at=d.updated_at
         )
@@ -1219,9 +1298,9 @@ async def create_device(device: DeviceCreateRequest, db: AsyncSession = Depends(
 
     result = await db.execute(
         text("""
-            INSERT INTO devices (name, mac, map_id, poll_frequency, write_road, color)
-            VALUES (:name, :mac, :map_id, :poll_frequency, :write_road, :color)
-            RETURNING id, name, mac, map_id, poll_frequency, write_road, color, created_at, updated_at
+            INSERT INTO devices (name, mac, map_id, poll_frequency, write_road, color, base_x, base_y)
+            VALUES (:name, :mac, :map_id, :poll_frequency, :write_road, :color, :base_x, :base_y)
+            RETURNING id, name, mac, map_id, poll_frequency, write_road, color, base_x, base_y, created_at, updated_at
         """),
         {
             "name": device_name,
@@ -1229,7 +1308,9 @@ async def create_device(device: DeviceCreateRequest, db: AsyncSession = Depends(
             "map_id": device.map_id,
             "poll_frequency": device.poll_frequency,
             "write_road": device.write_road,
-            "color": device.color
+            "color": device.color,
+            "base_x": device.base_x,
+            "base_y": device.base_y
         }
     )
     await db.commit()
@@ -1243,6 +1324,8 @@ async def create_device(device: DeviceCreateRequest, db: AsyncSession = Depends(
         poll_frequency=float(d.poll_frequency),
         write_road=d.write_road,
         color=d.color,
+        base_x=float(d.base_x),
+        base_y=float(d.base_y),
         created_at=d.created_at,
         updated_at=d.updated_at
     )
@@ -1283,11 +1366,19 @@ async def update_device(device_id: int, device: DeviceUpdateRequest, db: AsyncSe
         update_fields.append("color = :color")
         params["color"] = device.color
 
+    if device.base_x is not None:
+        update_fields.append("base_x = :base_x")
+        params["base_x"] = device.base_x
+
+    if device.base_y is not None:
+        update_fields.append("base_y = :base_y")
+        params["base_y"] = device.base_y
+
     if not update_fields:
         # Если ничего не передано, просто возвращаем текущее устройство
         result = await db.execute(
             text("""
-                SELECT id, name, mac, map_id, poll_frequency, write_road, color, created_at, updated_at
+                SELECT id, name, mac, map_id, poll_frequency, write_road, color, base_x, base_y, created_at, updated_at
                 FROM devices
                 WHERE id = :device_id
             """),
@@ -1302,6 +1393,8 @@ async def update_device(device_id: int, device: DeviceUpdateRequest, db: AsyncSe
             poll_frequency=float(d.poll_frequency),
             write_road=d.write_road,
             color=d.color,
+            base_x=float(d.base_x),
+            base_y=float(d.base_y),
             created_at=d.created_at,
             updated_at=d.updated_at
         )
@@ -1311,7 +1404,7 @@ async def update_device(device_id: int, device: DeviceUpdateRequest, db: AsyncSe
         UPDATE devices
         SET {', '.join(update_fields)}
         WHERE id = :device_id
-        RETURNING id, name, mac, map_id, poll_frequency, write_road, color, created_at, updated_at
+        RETURNING id, name, mac, map_id, poll_frequency, write_road, color, base_x, base_y, created_at, updated_at
     """
 
     result = await db.execute(text(update_sql), params)
@@ -1326,6 +1419,8 @@ async def update_device(device_id: int, device: DeviceUpdateRequest, db: AsyncSe
         poll_frequency=float(d.poll_frequency),
         write_road=d.write_road,
         color=d.color,
+        base_x=float(d.base_x),
+        base_y=float(d.base_y),
         created_at=d.created_at,
         updated_at=d.updated_at
     )
