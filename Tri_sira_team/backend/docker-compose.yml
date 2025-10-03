@@ -1,0 +1,22 @@
+services:
+  service:
+    build: ./
+    command: ./service
+    depends_on:
+      - mosquitto
+    ports: 
+      - ${SERVICE_PORT}:${SERVICE_INTERNAL_PORT} # внешний:внутренний
+    volumes:
+      - ./data:/app/data
+    env_file:
+      - .env
+  mosquitto:
+    image: eclipse-mosquitto
+    container_name: mosquitto
+    restart: unless-stopped
+    ports:
+      - "${MOSQUITTO_PORT}:${MOSQUITTO_INTERNAL_PORT}"
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
+    env_file:
+      - .env
