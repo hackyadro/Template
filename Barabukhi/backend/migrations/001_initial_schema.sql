@@ -109,25 +109,40 @@ FOR EACH ROW
 EXECUTE FUNCTION track_device_changes();
 
 -- Вставляем тестовые данные
-INSERT INTO maps (name) VALUES ('office_floor_1') ON CONFLICT (name) DO NOTHING;
+INSERT INTO maps (name) VALUES ('yadro_nsu') ON CONFLICT (name) DO NOTHING;
+INSERT INTO maps (name) VALUES ('kpa_nsu') ON CONFLICT (name) DO NOTHING;
 
--- Получаем ID созданной карты
+-- Получаем ID созданных карт и вставляем маяки
 DO $$
 DECLARE
-    map_id_var INTEGER;
+    yadro_map_id INTEGER;
+    kpa_map_id INTEGER;
 BEGIN
-    SELECT id INTO map_id_var FROM maps WHERE name = 'office_floor_1';
+    SELECT id INTO yadro_map_id FROM maps WHERE name = 'yadro_nsu';
+    SELECT id INTO kpa_map_id FROM maps WHERE name = 'kpa_nsu';
 
-    -- Вставляем тестовые маяки
+    -- Вставляем маяки для yadro_nsu
     INSERT INTO beacons (map_id, name, x_coordinate, y_coordinate) VALUES
-        (map_id_var, 'beacon_1', 3.0, -2.4),
-        (map_id_var, 'beacon_2', -2.4, -0.6),
-        (map_id_var, 'beacon_3', 1.8, 9.0),
-        (map_id_var, 'beacon_4', 4.8, 18.6),
-        (map_id_var, 'beacon_5', -1.8, 26.4),
-        (map_id_var, 'beacon_6', -1.8, 34.2),
-        (map_id_var, 'beacon_7', 7.8, 34.2),
-        (map_id_var, 'beacon_8', -1.8, 40.8)
+        (yadro_map_id, 'beacon_1', 3.0, -2.4),
+        (yadro_map_id, 'beacon_2', -2.4, -0.6),
+        (yadro_map_id, 'beacon_3', 1.8, 9.0),
+        (yadro_map_id, 'beacon_4', 4.8, 18.6),
+        (yadro_map_id, 'beacon_5', -1.8, 26.4),
+        (yadro_map_id, 'beacon_6', -1.8, 34.2),
+        (yadro_map_id, 'beacon_7', 7.8, 34.2),
+        (yadro_map_id, 'beacon_8', -1.8, 40.8)
+    ON CONFLICT (map_id, name) DO NOTHING;
+
+    -- Вставляем маяки для kpa_nsu
+    INSERT INTO beacons (map_id, name, x_coordinate, y_coordinate) VALUES
+        (kpa_map_id, 'beacon_1', -7.2, -4.8),
+        (kpa_map_id, 'beacon_2', 3.0, -4.8),
+        (kpa_map_id, 'beacon_3', 9.6, -0.6),
+        (kpa_map_id, 'beacon_4', -13.8, -1.8),
+        (kpa_map_id, 'beacon_5', -9.0, 4.2),
+        (kpa_map_id, 'beacon_6', 6.0, 9.0),
+        (kpa_map_id, 'beacon_7', -13.2, 10.8),
+        (kpa_map_id, 'beacon_8', -3.0, 2.4)
     ON CONFLICT (map_id, name) DO NOTHING;
 END $$;
 

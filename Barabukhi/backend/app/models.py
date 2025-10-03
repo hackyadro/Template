@@ -35,19 +35,18 @@ class PingResponse(BaseModel):
 class SignalData(BaseModel):
     """Данные о сигнале от маяка"""
     name: str
-    signal: int  # RSSI
+    signal: float  # RSSI
 
 
 class SignalDataWithSamples(BaseModel):
     """Данные о сигнале от маяка с количеством измерений"""
     name: str
-    signal: int  # RSSI
+    signal: float  # RSSI
     samples: int = 1  # количество измерений
 
 
 class SendSignalRequest(BaseModel):
     """Запрос на отправку сигналов"""
-    name: str  # имя устройства
     mac: str
     map: str  # название карты
     list: List[SignalDataWithSamples]
@@ -133,8 +132,8 @@ class MapResponse2(BaseModel):
 
 class DeviceCreateRequest(BaseModel):
     """Запрос на создание устройства"""
-    name: str
     mac: str = Field(..., pattern=r'^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$')
+    name: Optional[str] = None  # Если не указано, будет автоматически Device_{mac}
     map_id: Optional[int] = None
     poll_frequency: float = 1.0
     write_road: bool = True

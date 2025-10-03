@@ -73,6 +73,7 @@ const applyAllDevice = (data: any) => {
       existing.name = d.name ?? existing.name;
       existing.pollFrequency = d.freq ?? existing.pollFrequency;
       existing.mapId = d.map_set;
+      existing.isPolling = d.write_road ?? false;
     } else {
       devices.value.push({
         id: Date.now().toString() + '_' + mac,
@@ -82,7 +83,7 @@ const applyAllDevice = (data: any) => {
         pollFrequency: d.freq ?? 1,
         mapId: d.map_set,
         path: [],
-        isPolling: d.isPolling ?? false,
+        isPolling: d.write_road ?? false,
         visible: true,
       });
     }
@@ -133,8 +134,9 @@ const handlePositionUpdate = (data: any) => {
     return;
   }
 
-  // Добавляем новую точку в путь только если устройство активно
-  if (device.isPolling && device.visible) {
+  // Добавляем новую точку в путь если устройство активно (isPolling)
+  // visible используется только для отображения на карте
+  if (device.isPolling) {
     device.path.push({
       x,
       y,

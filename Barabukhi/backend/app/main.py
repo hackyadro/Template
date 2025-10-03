@@ -422,7 +422,7 @@ async def send_signal(request: SendSignalRequest, db: AsyncSession = Depends(get
                 VALUES (:name, :mac, :map_id, :write_road)
                 RETURNING id
             """),
-            {"name": request.name, "mac": request.mac, "map_id": map_id, "write_road": True}
+            {"name": f"Device_{request.mac}", "mac": request.mac, "map_id": map_id, "write_road": True}
         )
         device_id = device_insert.scalar()
         write_road = True
@@ -430,13 +430,6 @@ async def send_signal(request: SendSignalRequest, db: AsyncSession = Depends(get
     else:
         device_id = device.id
         write_road = device.write_road
-
-        # Обновляем имя устройства если оно передано
-        if request.name and request.name != f"Device_{request.mac}":
-            await db.execute(
-                text("UPDATE devices SET name = :name WHERE id = :device_id"),
-                {"name": request.name, "device_id": device_id}
-            )
 
     # Получаем последнюю позицию для использования в алгоритме как prior
     last_position_result = await db.execute(
@@ -649,6 +642,254 @@ async def websocket_endpoint(websocket: WebSocket, db: AsyncSession = Depends(ge
                         "data": {"maps": maps_list}
                     }))
 
+                # Обработка add_map
+                elif msg_type == "add_map":
+                    data = message.get("data", {})
+                    map_name = data.get("map_name")
+                    beacons = data.get("beacons", [])
+
+                    if not map_name:
+                        await websocket.send_text(json.dumps({
+                            "type": "error",
+                            "data": {"message": "map_name is required"}
+                        }))
+                        continue
+
+                    # Проверяем существование карты
+                    map_result = await db.execute(
+                        text("SELECT id FROM maps WHERE name = :map_name"),
+                        {"map_name": map_name}
+                    )
+                    map_data = map_result.first()
+
+                    if map_data:
+                        map_id = map_data.id
+                        # Удаляем старые маяки
+                        await db.execute(
+                            text("DELETE FROM beacons WHERE map_id = :map_id"),
+                            {"map_id": map_id}
+                        )
+                    else:
+                        # Создаём новую карту
+                        map_insert = await db.execute(
+                            text("INSERT INTO maps (name) VALUES (:map_name) RETURNING id"),
+                            {"map_name": map_name}
+                        )
+                        map_id = map_insert.scalar()
+
+                    # Добавляем маяки
+                    for beacon in beacons:
+                        await db.execute(
+                            text("""
+                                INSERT INTO beacons (map_id, name, x_coordinate, y_coordinate)
+                                VALUES (:map_id, :name, :x, :y)
+                            """),
+                            {
+                                "map_id": map_id,
+                                "name": beacon.get("name"),
+                                "x": beacon.get("x"),
+                                "y": beacon.get("y")
+                            }
+                        )
+
+                    await db.commit()
+
+                    # Отправляем обновлённый список карт всем клиентам
+                    maps_result = await db.execute(
+                        text("SELECT id, name, created_at FROM maps ORDER BY created_at DESC")
+                    )
+                    maps = maps_result.fetchall()
+
+                    maps_list = []
+                    for map_row in maps:
+                        beacons_result = await db.execute(
+                            text("""
+                                SELECT id, name, x_coordinate, y_coordinate
+                                FROM beacons
+                                WHERE map_id = :map_id
+                                ORDER BY id
+                            """),
+                            {"map_id": map_row.id}
+                        )
+                        beacons_data = [
+                            {
+                                "id": b.id,
+                                "name": b.name,
+                                "x": float(b.x_coordinate),
+                                "y": float(b.y_coordinate)
+                            }
+                            for b in beacons_result.fetchall()
+                        ]
+
+                        maps_list.append({
+                            "id": map_row.id,
+                            "name": map_row.name,
+                            "beacons": beacons_data
+                        })
+
+                    await websocket.send_text(json.dumps({
+                        "type": "list_map",
+                        "data": {"maps": maps_list}
+                    }))
+
+                # Обработка set_map_to_device
+                elif msg_type == "set_map_to_device":
+                    data = message.get("data", {})
+                    mac = data.get("mac")
+                    map_name = data.get("map_name")
+
+                    if not mac or not map_name:
+                        await websocket.send_text(json.dumps({
+                            "type": "error",
+                            "data": {"message": "mac and map_name are required"}
+                        }))
+                        continue
+
+                    # Получаем карту
+                    map_result = await db.execute(
+                        text("SELECT id FROM maps WHERE name = :map_name"),
+                        {"map_name": map_name}
+                    )
+                    map_data = map_result.first()
+
+                    if not map_data:
+                        await websocket.send_text(json.dumps({
+                            "type": "error",
+                            "data": {"message": "Map not found"}
+                        }))
+                        continue
+
+                    # Обновляем устройство
+                    await db.execute(
+                        text("UPDATE devices SET map_id = :map_id WHERE mac = :mac"),
+                        {"map_id": map_data.id, "mac": mac}
+                    )
+                    await db.commit()
+
+                    # Отправляем обновлённый список устройств
+                    devices_result = await db.execute(
+                        text("""
+                            SELECT id, name, mac, map_id, poll_frequency, write_road, color
+                            FROM devices
+                            ORDER BY created_at DESC
+                        """)
+                    )
+                    devices = devices_result.fetchall()
+
+                    devices_list = [
+                        {
+                            "id": d.id,
+                            "name": d.name,
+                            "mac": d.mac,
+                            "map_set": d.map_id,
+                            "freq": float(d.poll_frequency),
+                            "write_road": d.write_road,
+                            "color": d.color
+                        }
+                        for d in devices
+                    ]
+
+                    await websocket.send_text(json.dumps({
+                        "type": "all_device",
+                        "data": devices_list
+                    }))
+
+                # Обработка set_freq
+                elif msg_type == "set_freq":
+                    data = message.get("data", {})
+                    mac = data.get("mac")
+                    freq = data.get("freq")
+
+                    if not mac or freq is None:
+                        await websocket.send_text(json.dumps({
+                            "type": "error",
+                            "data": {"message": "mac and freq are required"}
+                        }))
+                        continue
+
+                    # Обновляем частоту устройства
+                    await db.execute(
+                        text("UPDATE devices SET poll_frequency = :freq WHERE mac = :mac"),
+                        {"freq": float(freq), "mac": mac}
+                    )
+                    await db.commit()
+
+                    # Отправляем обновлённый список устройств
+                    devices_result = await db.execute(
+                        text("""
+                            SELECT id, name, mac, map_id, poll_frequency, write_road, color
+                            FROM devices
+                            ORDER BY created_at DESC
+                        """)
+                    )
+                    devices = devices_result.fetchall()
+
+                    devices_list = [
+                        {
+                            "id": d.id,
+                            "name": d.name,
+                            "mac": d.mac,
+                            "map_set": d.map_id,
+                            "freq": float(d.poll_frequency),
+                            "write_road": d.write_road,
+                            "color": d.color
+                        }
+                        for d in devices
+                    ]
+
+                    await websocket.send_text(json.dumps({
+                        "type": "all_device",
+                        "data": devices_list
+                    }))
+
+                # Обработка set_write_road
+                elif msg_type == "set_write_road":
+                    data = message.get("data", {})
+                    mac = data.get("mac")
+                    status = data.get("status")
+
+                    if not mac or status is None:
+                        await websocket.send_text(json.dumps({
+                            "type": "error",
+                            "data": {"message": "mac and status are required"}
+                        }))
+                        continue
+
+                    # Обновляем статус записи для устройства
+                    await db.execute(
+                        text("UPDATE devices SET write_road = :status WHERE mac = :mac"),
+                        {"status": bool(status), "mac": mac}
+                    )
+                    await db.commit()
+
+                    # Отправляем обновлённый список устройств
+                    devices_result = await db.execute(
+                        text("""
+                            SELECT id, name, mac, map_id, poll_frequency, write_road, color
+                            FROM devices
+                            ORDER BY created_at DESC
+                        """)
+                    )
+                    devices = devices_result.fetchall()
+
+                    devices_list = [
+                        {
+                            "id": d.id,
+                            "name": d.name,
+                            "mac": d.mac,
+                            "map_set": d.map_id,
+                            "freq": float(d.poll_frequency),
+                            "write_road": d.write_road,
+                            "color": d.color
+                        }
+                        for d in devices
+                    ]
+
+                    await websocket.send_text(json.dumps({
+                        "type": "all_device",
+                        "data": devices_list
+                    }))
+
                 # Обработка write_road (опционально - для будущего расширения)
                 elif msg_type == "write_road":
                     # На данный момент просто подтверждаем получение
@@ -818,6 +1059,9 @@ async def get_devices(db: AsyncSession = Depends(get_db)):
 @app.post("/api/devices", response_model=DeviceResponse, status_code=201)
 async def create_device(device: DeviceCreateRequest, db: AsyncSession = Depends(get_db)):
     """Создать новое устройство"""
+    # Автогенерация имени если не указано
+    device_name = device.name if device.name else f"Device_{device.mac}"
+
     result = await db.execute(
         text("""
             INSERT INTO devices (name, mac, map_id, poll_frequency, write_road, color)
@@ -825,7 +1069,7 @@ async def create_device(device: DeviceCreateRequest, db: AsyncSession = Depends(
             RETURNING id, name, mac, map_id, poll_frequency, write_road, color, created_at, updated_at
         """),
         {
-            "name": device.name,
+            "name": device_name,
             "mac": device.mac,
             "map_id": device.map_id,
             "poll_frequency": device.poll_frequency,
