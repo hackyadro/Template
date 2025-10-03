@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 
 const HOST_ADDRESS = "10.145.244.78:8000"
 
@@ -32,6 +32,8 @@ interface Device {
   path: PathPoint[];
   isPolling: boolean;
   visible: boolean;
+  baseX: number | null;
+  baseY: number | null;
 }
 
 // Состояние
@@ -49,6 +51,13 @@ const backendWsUrl = ref<string>(`ws://${HOST_ADDRESS}/ws`);
 
 type InMsg = { type: string; data: any };
 type OutMsg = { type: string; data: any };
+
+// helpers
+const toNumOrNull = (v: any): number | null => {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
 
 const sendWs = (msg: OutMsg) => {
   if (ws.value && wsReady.value) {
@@ -72,6 +81,10 @@ const applyAllDevice = (data: any) => {
       existing.pollFrequency = d.freq ?? existing.pollFrequency;
       existing.mapId = d.map_set;
       existing.isPolling = d.write_road ?? false;
+      const bx = toNumOrNull(d.base_x);
+      const by = toNumOrNull(d.base_y);
+      if (bx !== null) existing.baseX = bx;
+      if (by !== null) existing.baseY = by;
     } else {
       devices.value.push({
         id: Date.now().toString() + '_' + mac,
@@ -82,6 +95,8 @@ const applyAllDevice = (data: any) => {
         path: [],
         isPolling: d.write_road ?? false,
         visible: true,
+        baseX: toNumOrNull(d.base_x),
+        baseY: toNumOrNull(d.base_y),
       });
     }
   }
@@ -150,7 +165,7 @@ const handlePositionUpdate = (data: any) => {
     });
 
     // Ограничиваем историю (например, последние 100 точек)
-    if (device.path.length > 100) {
+    if (device.path.length > 10000) {
       device.path.shift();
     }
   }
@@ -310,6 +325,20 @@ const clearDevicePath = (deviceId: string) => {
   const d = devices.value.find(x => x.id === deviceId);
   if (!d) return;
   d.path = [];
+};
+
+// Установить базовые координаты устройства и сбросить предыдущий путь
+const setDeviceBaseCoordinates = (device: Device) => {
+  if (!device?.mac) return;
+  const x = toNumOrNull(device.baseX);
+  const y = toNumOrNull(device.baseY);
+  if (x === null || y === null) {
+    console.warn('Некорректные базовые координаты');
+    return;
+  }
+  sendWs({ type: 'set_base_cord', data: { mac: device.mac, x, y } });
+  // Сбрасываем предыдущую запись пути для устройства
+  device.path = [];
 };
 
 // Запросить с сервера последнее измерение (маршрут) для устройства
@@ -511,11 +540,35 @@ const handleDeviceFreqCommit = (device: Device) => {
                   </label>
                   <input :id="'freqRange_' + d.id" type="range" min="0.1" max="10" step="0.1" :value="d.pollFrequency" @input="handleDeviceFreqInput(d, $event)" @change="handleDeviceFreqCommit(d)" />
                 </div>
+                <div class="form-group">
+                  <div class="form-label">Base координаты (X, Y):</div>
+                  <div style="display:grid; grid-template-columns: 1fr 1fr auto; gap:8px; align-items:end;">
+                    <div>
+                      <input
+                        :id="'baseX_' + d.id"
+                        type="number"
+                        step="0.1"
+                        placeholder="X"
+                        v-model.number="d.baseX"
+                      />
+                    </div>
+                    <div>
+                      <input
+                        :id="'baseY_' + d.id"
+                        type="number"
+                        step="0.1"
+                        placeholder="Y"
+                        v-model.number="d.baseY"
+                      />
+                    </div>
+                  </div>
+                </div>
                 <div class="button-group">
                   <button class="btn btn-success" @click="startDevicePolling(d.id)" :disabled="d.isPolling || !d.mapId">▶️ Старт</button>
                   <button class="btn btn-danger" @click="stopDevicePolling(d.id)" :disabled="!d.isPolling">⏸️ Стоп</button>
                   <button class="btn btn-secondary" @click="clearDevicePath(d.id)" :disabled="d.path.length === 0">🗑️ Очистить</button>
                   <button class="btn btn-primary" @click="downloadLastRoad(d)">⬇️ Скачать последнее</button>
+                  <button class="btn btn-primary" @click="setDeviceBaseCoordinates(d)">Set pos</button>
                 </div>
               </div>
             </div>

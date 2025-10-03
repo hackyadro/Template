@@ -6,7 +6,7 @@ import urequests as requests
 import ubinascii
 import ubluetooth
 
-SSID = "iPhone (Владимир)"
+SSID = "HotDot"
 PASSWORD = "12345678"
 
 map_name = None
@@ -19,8 +19,10 @@ JSON_PARSE_ERROR = "JSON parse error:"
 HOST_ADDRESS = "http://10.145.244.78:8000"
 
 # BLE scanning and reporting config
-SCAN_TIME = 0.05  # seconds per scan burst
-POLL_FREQUENCY_HZ = 5  # fixed BLE scan rate
+# SCAN_FREQUENCY_HZ defines how often we sample BLE (fixed sampling rate)
+# Reporting rate is controlled separately by 'freq' from the server (see current_report_period)
+SCAN_TIME = 0.05               # seconds per scan burst
+SCAN_FREQUENCY_HZ = 10.0       # always sample at ~10 Hz regardless of reporting frequency
 
 # Names of beacons we accept from BLE advertisements
 BEACONS = {
@@ -56,7 +58,7 @@ def decode_name(adv_data):
     return None
 
 class BLEScanner:
-    def __init__(self, poll_freq_hz=10):
+    def __init__(self, poll_freq_hz=10.0):
         self.ble = ubluetooth.BLE()
         self.ble.active(True)
         self.ble.irq(self.bt_irq)
@@ -65,7 +67,7 @@ class BLEScanner:
         self.scanning_active = False
         self.poll_freq_hz = poll_freq_hz
         self.poll_period = 1.0 / poll_freq_hz
-        # accumulated structure: {mac: {'name': str, 'rssi_values': [..]}}
+    # accumulated structure: {beacon_name: {'rssi_values': [..]}}
         self.accumulated_data = {}
 
     def bt_irq(self, event, data):
@@ -111,22 +113,25 @@ class BLEScanner:
         return self.current_scan_devices.copy()
 
     def accumulate_data(self, devices):
-        for mac, info in devices.items():
-            if mac not in self.accumulated_data:
-                self.accumulated_data[mac] = {
-                    'name': info['name'],
+        """Accumulate by beacon name to avoid MAC rotation fragmentation."""
+        for _mac, info in devices.items():
+            name = info.get('name')
+            if not name:
+                continue
+            if name not in self.accumulated_data:
+                self.accumulated_data[name] = {
                     'rssi_values': []
                 }
-            self.accumulated_data[mac]['rssi_values'].append(info['rssi'])
+            self.accumulated_data[name]['rssi_values'].append(info['rssi'])
 
     def calculate_averages(self):
         averaged_data = {}
-        for mac, info in self.accumulated_data.items():
+        for name, info in self.accumulated_data.items():
             vals = info.get('rssi_values') or []
             if vals:
                 avg_rssi = sum(vals) / len(vals)
-                averaged_data[mac] = {
-                    'name': info['name'],
+                averaged_data[name] = {
+                    'name': name,
                     'rssi': avg_rssi,
                     'samples': len(vals)
                 }
@@ -149,7 +154,6 @@ def wifi_connect(ssid, pwd):
         time.sleep(1)
 
     if wifi.isconnected():
-        ip = wifi.ifconfig()[0]
         print("Connected to Wi-Fi!")
         # print("IP address:", ip)
         return True
@@ -318,7 +322,7 @@ def ping_server():
 def send_signal_with_list(beacon_list):
     url_post = HOST_ADDRESS + "/send_signal"
     payload = {"mac": MAC_ADDRESS, "map": map_name, "list": beacon_list}
-    status, body = do_post(url_post, json_dict=payload)
+    _status, _ = do_post(url_post, json_dict=payload)
     # print("!!!! ", status, body)
 
 def current_report_period():
@@ -334,8 +338,9 @@ def current_report_period():
     return 1.0 / f
 
 def run_main_loop():
-    """Main loop: scan at 10Hz, ping each 1s, send_signal at 'freq' Hz."""
-    scanner = BLEScanner(poll_freq_hz=POLL_FREQUENCY_HZ)
+    """Main loop: scan at fixed ~10Hz, ping each 1s, send_signal at 'freq' Hz."""
+    # Force scanner to run at fixed scan rate independent of report frequency
+    scanner = BLEScanner(poll_freq_hz=SCAN_FREQUENCY_HZ)
     last_ping_time = time.time()
     last_report_time = time.time()
 
@@ -343,8 +348,12 @@ def run_main_loop():
         try:
             loop_start = time.time()
 
-            # 10 Hz BLE polling
-            devices_found = scanner.poll_once()
+            # Fixed-rate BLE polling
+            scan_duration = SCAN_TIME
+            # Keep duty cycle sane relative to period
+            if scanner.poll_period > 0:
+                scan_duration = min(SCAN_TIME, scanner.poll_period * 0.8)
+            devices_found = scanner.poll_once(duration=scan_duration)
             scanner.accumulate_data(devices_found)
 
             # Ping every 1 second
@@ -370,7 +379,7 @@ def run_main_loop():
                 scanner.accumulated_data.clear()
                 last_report_time = time.time()
 
-            # sleep to maintain ~10Hz polling
+            # sleep to maintain fixed polling rate
             elapsed = time.time() - loop_start
             sleep_time = max(0, scanner.poll_period - elapsed)
             if sleep_time > 0:

@@ -1,7 +1,15 @@
-# Tauri + Vue + TypeScript
+# Client for locator
+install rust and bun
 
-This template should help get you started developing with Vue 3 and TypeScript in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+Не забыть везде заменить ip в 
+HOST_ADDRESS = "10.145.244.78:8000"
+run client: bun run tauri dev
+или собрать билд в приложение: bun run tauri build
 
-## Recommended IDE Setup
-
-- [VS Code](https://code.visualstudio.com/) + [Vue - Official](https://marketplace.visualstudio.com/items?itemName=Vue.volar) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+Использование
+Задаёте карту
+Запускаете устройство через 
+python3 -m mpremote connect /dev/cu.url run itog_3.py
+Перезагрузка и установка 0 позиции
+Нажимаем на Старт и всё
+потом стоп и скачать последнее
