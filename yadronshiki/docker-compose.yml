@@ -16,6 +16,8 @@ services:
       context: .
       dockerfile: ./Dockerfile.locator
     container_name: locator
+    env_file:
+      - .env
     depends_on:
       - mqtt
     environment:
