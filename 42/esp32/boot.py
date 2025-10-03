@@ -10,14 +10,16 @@ except ImportError:
     from umqtt.simple import MQTTClient
 
 
-# -------------------- НАСТРОЙКИ --------------------
-# Wi-Fi
-WIFI_SSID = "XXXX"
-WIFI_PASS = "XXXX"
+# НАСТРОЙКИ
 
-# MQTT
-BROKER = "XXXX"    # IP брокера (Mosquitto на ПК)
+WIFI_SSID = "naut_2"
+WIFI_PASS = "FFFFFFFF"
+
+BROKER = "10.175.95.190"
 PORT = 1883
+MQTT_USER = "42"
+MQTT_PASS = "123123"
+
 # ---------------------------------------------------
 
 
@@ -26,10 +28,9 @@ TOPIC_DATA = b"devices/esp32/telemetry"
 TOPIC_STATUS = b"devices/esp32/status"
 
 BEACON_PREFIX = "beacon_"
-SCAN_DURATION_S = 5
+SCAN_DURATION_S = 2
 
 SEQ = 0
-
 
 
 def wifi_connect():
@@ -48,14 +49,20 @@ def wifi_connect():
             if time.ticks_diff(time.ticks_ms(), t0) > 15000:
                 raise RuntimeError("WiFi connect timeout")
             time.sleep_ms(200)
-            
+
     print("WiFi:", sta.ifconfig())
     return sta
 
 
-
 def mqtt_connect():
-    client = MQTTClient(client_id=DEVICE_ID, server=BROKER, port=PORT, keepalive=30)
+    client = MQTTClient(
+        client_id=DEVICE_ID,
+        server=BROKER,
+        port=PORT,
+        user=MQTT_USER,
+        password=MQTT_PASS,
+        keepalive=30
+    )
 
     try:
         client.set_last_will(TOPIC_STATUS, b"offline", retain=False, qos=1)
@@ -69,7 +76,6 @@ def mqtt_connect():
     return client
 
 
-
 def scan_beacons(ble):
     found = {}
 
@@ -81,11 +87,12 @@ def scan_beacons(ble):
             while n + 1 < len(payload):
                 field_len = payload[n]
 
-                if field_len == 0: break
+                if field_len == 0:
+                    break
                 if payload[n + 1] == 0x09:
                     try:
                         name = bytes(payload[n+2:n+field_len+1]).decode("utf-8")
-                    except: 
+                    except:
                         pass
                     break
                 n += field_len + 1
@@ -95,11 +102,10 @@ def scan_beacons(ble):
 
     ble.irq(ble_irq)
     ble.gap_scan(SCAN_DURATION_S * 100, 30000, 30000)
-    time.sleep(SCAN_DURATION_S/10)
+    time.sleep(SCAN_DURATION_S / 10)
     ble.gap_scan(None)  # остановить скан
 
     return [{"name": n, "rssi": r} for n, r in found.values()]
-
 
 
 def main():
@@ -129,13 +135,14 @@ def main():
             client.publish(TOPIC_DATA, payload)
 
             print("Published:", payload)
-            time.sleep(0)
+            time.sleep(0.05)  # задержка перед новым сканом
         except Exception as e:
             print("Error:", e)
-            
+
             try:
                 client.disconnect()
-            except: pass
+            except:
+                pass
 
             client = None
             time.sleep(5)

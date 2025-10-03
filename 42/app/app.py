@@ -68,7 +68,7 @@ def fixed_square_bounds(beacons_df: pd.DataFrame, paths_dir: Path) -> Optional[T
         return None
     x0, x1 = min(xs), max(xs)
     y0, y1 = min(ys), max(ys)
-    pad = 1.2
+    pad = 5
     x0 -= pad; x1 += pad; y0 -= pad; y1 += pad
     cx, cy = (x0+x1)/2, (y0+y1)/2
     span = max(x1-x0, y1-y0)
