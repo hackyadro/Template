@@ -23,8 +23,7 @@
   esptool.py --chip esp32s3 --port COM3 erase_flash
 3. Прошейте приемник
   ```bash
-  esptool.py --chip esp32s3 --port YOUR-PORT --baud 460800 write_flash -z 0x0 PATH-TO-FRIMWARE	   	
-
+  esptool.py --chip esp32s3 --port YOUR-PORT --baud 460800 write_flash -z 0x0 PATH-TO-FRIMWARE
 ## Запуск
 1. Установите Docker и Docker Compose.
 2. Клонируйте репозиторий:
