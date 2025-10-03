@@ -1,7 +1,4 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
-import Map from "~/components/map.vue";
-
 interface Position {
   x: number;
   y: number;
@@ -15,8 +12,12 @@ interface Beacon {
 
 const position = ref<Position | null>(null);
 const beacons = ref<Beacon[]>([]);
-const path = ref<Position[]>([]); // сюда пишем маршрут
-const recording = ref(false); // идёт ли запись пути
+const path = ref<Position[]>([]);
+const recording = ref(false);
+
+// частота опроса (мс)
+const pollingInterval = ref(1000);
+let intervalId: ReturnType<typeof setInterval> | null = null;
 
 async function fetchPosition() {
   try {
@@ -25,7 +26,6 @@ async function fetchPosition() {
     if (data.status === "ok" || (typeof data.position.x === "number" && typeof data.position.y === "number")) {
       position.value = { x: data.position.x, y: data.position.y };
 
-      // если идёт запись пути — добавляем в массив
       if (recording.value && position.value) {
         path.value.push({ ...position.value });
       }
@@ -53,21 +53,15 @@ async function fetchBeacons() {
 
 function toggleRecording() {
   if (!recording.value) {
-    // начинаем новый путь
     path.value = [];
     recording.value = true;
   } else {
-    // останавливаем запись
     recording.value = false;
-
     if (path.value.length > 0) {
-      // формируем CSV
       let content = "X;Y\n";
       for (const p of path.value) {
         content += `${p.x};${p.y}\n`;
       }
-
-      // создаём blob и качаем
       const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -79,18 +73,38 @@ function toggleRecording() {
   }
 }
 
+function startPolling() {
+  if (intervalId) clearInterval(intervalId);
+  intervalId = setInterval(fetchPosition, pollingInterval.value);
+}
+
 onMounted(() => {
   fetchBeacons();
   fetchPosition();
-  setInterval(fetchPosition, 1000);
+  startPolling();
+});
+
+// пересоздаём таймер при изменении pollingInterval
+watch(pollingInterval, () => {
+  startPolling();
 });
 </script>
 
 <template lang="pug">
 div.container
-  pre {{ position }}
   h1 Indoor Map
   button(@click="toggleRecording") {{ recording ? "Завершить путь" : "Начать путь" }}
+
+  div.slider-container
+    label Частота опроса: {{ (pollingInterval/1000).toFixed(1) }} с
+    input(
+      type="range"
+      min="100"
+      max="1000"
+      step="100"
+      v-model="pollingInterval"
+    )
+
   Map(:position="position" :beacons="beacons" :path="path")
 </template>
 
@@ -109,8 +123,18 @@ button {
   font-size: 14px;
   cursor: pointer;
 }
-
 button:hover {
   background: #0056b3;
+}
+
+.slider-container {
+  margin: 15px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+input[type="range"] {
+  width: 200px;
 }
 </style>
