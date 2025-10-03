@@ -1,0 +1,13 @@
+CompileFlags:
+  Add: [
+    "-std=c++20",
+    "-I/usr/include",
+    "-I/usr/include/c++/v1",
+    "-I/usr/lib/clang/17/include"   # проверьте версию Clang
+  ]
+
+Diagnostics:
+  Suppress: [
+    "pp_file_not_found"
+  ]
+
