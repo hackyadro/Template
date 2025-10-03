@@ -200,6 +200,43 @@ async def get_mqtt_messages(limit: int = Query(50, ge=1, le=100)):
         raise HTTPException(status_code=500, detail=f"Failed to retrieve MQTT messages: {e}")
 
 
+
+
+@router.get("/beacons/config", response_model=APIResponse)
+async def get_beacon_config(request: Request) -> APIResponse:
+    """Return currently loaded beacon configuration."""
+
+    positions: Dict[str, Tuple[float, float]] = {}
+
+    if mqtt_client:
+        try:
+            positions = mqtt_client.get_beacon_positions()
+        except Exception:
+            logger.debug("Failed to fetch beacon config from MQTT client", exc_info=True)
+
+    if not positions:
+        try:
+            state_positions = getattr(request.app.state, "beacon_positions", {})
+            if isinstance(state_positions, dict):
+                positions = dict(state_positions)
+        except Exception:
+            logger.debug("Failed to read beacon config from app state", exc_info=True)
+
+    serialized = [
+        {"Name": name, "X": coords[0], "Y": coords[1]}
+        for name, coords in sorted(positions.items())
+    ]
+
+    return APIResponse(
+        status="OK",
+        message="Beacon configuration loaded" if serialized else "No beacon configuration available",
+        data={
+            "count": len(serialized),
+            "positions": serialized,
+        }
+    )
+
+
 @router.post("/beacons/config", response_model=APIResponse)
 async def upload_beacon_config(request: Request, payload: Any = Body(...)):
     """Load beacon locations from JSON payload and update the MQTT client."""
