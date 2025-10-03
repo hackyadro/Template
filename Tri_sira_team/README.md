@@ -37,5 +37,8 @@ MOSQUITTO_INTERNAL_PORT=1833 # Если менять, то менять надо
 3. Соберите и запустите контейнеры:
 ```bash
 cd Tri_sira_team/backend
+```
+
+```bash
 docker-compose up --build
 ```
