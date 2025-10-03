@@ -15,11 +15,25 @@ cd repo
 
 ## 3. Запуск
 Докер файл лежит в подпапке репозитория 42, так что перед выполнением
-перейдите ```cd 42/```
+перейдите 
+```bash
+cd 42/
+```
 
 ```bash
 docker compose up --build
 ```
+
+Следующим шагом запускаете контейнеры на фоне
+
+```bash
+docker compose up -d
+```
+
+Скорее всего вы увидите ошибки Permission denied. Читайте пункт 7 о том как создать и установить полльзователя для корректно работы докер контейнра
+
+Далее вам необходимо запустить устройство с его boot файлом (читать в README.md из папки esp32.)
+
 
 ## 4. Проверка работы
 - MQTT брокер: `localhost:1883`
@@ -74,18 +88,27 @@ docker compose down
 Выполните команду для создания файла и пользователя:
 
 ```
-touch passwd
+rmdir docker/passwd/
+touch docker/passwd
 ```
 
 ```
-docker run --rm -it -v $(pwd)/passwd:/mosquitto/config/passwd eclipse-mosquitto sh -c "echo '42:$(mosquitto_passwd -b /dev/stdout 42 123123 | tail -n1 | cut -d: -f2)' > /mosquitto/config/passwd"
+sudo docker run --rm \
+  -v "$(pwd)/docker:/mosquitto/config:Z" \
+  eclipse-mosquitto \
+  mosquitto_passwd -b -c /mosquitto/config/passwd 42 123123
 ```
+
 
 ### 8.2 Установка прав доступа
 Mosquitto требует, чтобы файл был приватным. Настроим права:
 
 ```bash
-chmod 0600 passwd
+sudo chmod 600 passwd
+```
+
+```bash
+sudo chmod +x app/*.py
 ```
 
 Теперь доступ только у владельца.
