@@ -14,6 +14,7 @@ class PositioningEngine:
         self.used_beacons = []
         self._smoothing_alpha = 0.3
         
+        self.msg_buffer_count = 0
         self.msg_buffer: dict[str, dict[str, float]] = {}
         self.beacon_positions = self.load_beacon_positions()
         self.positioning_area = simple_convex_hull(
@@ -58,12 +59,34 @@ class PositioningEngine:
     def on_message(self, client, userdata, msg):
         if msg.topic == "ble/beacons/raw":
             try:
-                payload = json.loads(msg.payload.decode())
+                payload: dict[str, float] = json.loads(msg.payload.decode())
                 print(f"📡 Received MQTT payload: {payload}")
+
+                for key, value in payload.items():
+                    if self.msg_buffer.get(key) == None:
+                        self.msg_buffer[key] = dict()
+                    
+                    if self.msg_buffer[key].get("count") == None:
+                        self.msg_buffer[key]["count"] = 0
+                    
+                    if self.msg_buffer[key].get("rssi_sum") == None:
+                        self.msg_buffer[key]["rssi_sum"] = 0
+
+                    self.msg_buffer[key]["count"] += 1
+                    self.msg_buffer[key]["rssi_sum"] += value
+                    self.msg_buffer_count += 1
+
+                if self.msg_buffer_count < 3:
+                    return
                 
-                # Обрабатываем новый формат: {"beacon_1": -45, "beacon_2": -50, ...}
+                avg_beacons_rssi: dict[str, float] = {}
+                for b_name, b_values in self.msg_buffer.items():
+                    avg_beacons_rssi[b_name] = b_values["rssi_sum"]/b_values["count"]
+                
+                self.msg_buffer_count = 0
+                self.msg_buffer.clear()
+                
                 beacons_data = []
-                
                 for beacon_name, rssi in payload.items():
                     if beacon_name in self.beacon_positions:
                         beacon_data = {
@@ -136,11 +159,11 @@ class PositioningEngine:
         print("🚀 Starting Positioning Engine...")
         self.client.connect("mqtt-broker", 1883, 60)
 
-        # with open("etalon2.txt", "r") as f:
-        #     msgs = f.read().split("\n\n")
-        #     for msg in msgs:
-        #         engine.on_message(None, None, MSG(msg))
-        #         time.sleep(0.5)
+        with open("etalon2.txt", "r") as f:
+            msgs = f.read().split("\n\n")
+            for msg in msgs:
+                engine.on_message(None, None, MSG(msg))
+                time.sleep(0.5)
 
         self.client.loop_forever()
 
