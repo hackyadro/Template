@@ -8,7 +8,7 @@
 
 ```sh
 # из корня репозитория
-docker compose -f CR7/CR7/docker-compose.yml up -d --build
+docker compose -f docker-compose.yml up -d --build
 ```
 
 После запуска:
