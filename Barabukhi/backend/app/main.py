@@ -22,9 +22,9 @@ from app.models import (
 from app.positioning import PositioningEngine, BeaconData
 from app.advanced_positioning import AdvancedPositioningEngine
 
-# Глобальный экземпляр продвинутого движка позиционирования
-advanced_engine = AdvancedPositioningEngine()
-engine_calibrated = False
+# Словарь движков позиционирования для каждого устройства (по MAC адресу)
+advanced_engines: dict = {}
+engines_calibrated: dict = {}
 
 app = FastAPI(
     title="Indoor Navigation API",
@@ -388,11 +388,11 @@ async def send_signal(request: SendSignalRequest, db: AsyncSession = Depends(get
     Принять данные о сигналах от маяков и вычислить позицию.
     Новая сигнатура: name, mac, map, list:{name, signal, samples}
     """
-    global engine_calibrated
+    global advanced_engines, engines_calibrated
 
     # Получаем или создаём устройство
     result = await db.execute(
-        text("SELECT id, map_id, write_road, current_road_session_id FROM devices WHERE mac = :mac"),
+        text("SELECT id, map_id, write_road, current_road_session_id, base_x, base_y FROM devices WHERE mac = :mac"),
         {"mac": request.mac}
     )
     device = result.first()
@@ -420,11 +420,14 @@ async def send_signal(request: SendSignalRequest, db: AsyncSession = Depends(get
             text("""
                 INSERT INTO devices (name, mac, map_id, write_road)
                 VALUES (:name, :mac, :map_id, :write_road)
-                RETURNING id
+                RETURNING id, base_x, base_y
             """),
             {"name": f"Device_{request.mac}", "mac": request.mac, "map_id": map_id, "write_road": True}
         )
-        device_id = device_insert.scalar()
+        device_data = device_insert.first()
+        device_id = device_data.id
+        base_x = float(device_data.base_x)
+        base_y = float(device_data.base_y)
         write_road = True
 
         # Создаём road_session для нового устройства
@@ -450,6 +453,15 @@ async def send_signal(request: SendSignalRequest, db: AsyncSession = Depends(get
         device_id = device.id
         write_road = device.write_road
         road_session_id = device.current_road_session_id
+        base_x = float(device.base_x)
+        base_y = float(device.base_y)
+
+    # Получаем или создаём движок для этого устройства
+    if request.mac not in advanced_engines:
+        advanced_engines[request.mac] = AdvancedPositioningEngine(base_point=(base_x, base_y))
+        engines_calibrated[request.mac] = False
+
+    advanced_engine = advanced_engines[request.mac]
 
     # Получаем последнюю позицию для использования в алгоритме как prior
     last_position_result = await db.execute(
@@ -465,7 +477,7 @@ async def send_signal(request: SendSignalRequest, db: AsyncSession = Depends(get
     last_position = last_position_result.first()
 
     if last_position:
-        advanced_engine.last_position = (float(last_position.x_coordinate), float(last_position.y_coordinate))
+        advanced_engine.prev_position = (float(last_position.x_coordinate), float(last_position.y_coordinate))
 
     # Получаем маяки для вычисления позиции
     beacons_result = await db.execute(
@@ -482,11 +494,11 @@ async def send_signal(request: SendSignalRequest, db: AsyncSession = Depends(get
         for row in beacons_data
     }
 
-    # Калибруем продвинутый движок при первом запросе
-    if not engine_calibrated and beacons_map_tuples:
+    # Калибруем продвинутый движок при первом запросе для этого устройства
+    if not engines_calibrated.get(request.mac, False) and beacons_map_tuples:
         advanced_engine.calibrate(beacons_map_tuples)
-        engine_calibrated = True
-        print(f"[Calibration] alpha={advanced_engine.alpha:.3f}, beta={advanced_engine.beta:.3f}")
+        engines_calibrated[request.mac] = True
+        print(f"[Calibration for {request.mac}] alpha={advanced_engine.alpha:.3f}, beta={advanced_engine.beta:.3f}")
 
     # Формируем данные для calculate_position_with_samples
     # report_data: {beacon_name: {'rssi': value, 'samples': count}}

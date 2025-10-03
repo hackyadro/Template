@@ -35,14 +35,11 @@ class AdvancedPositioningEngine:
         '88:57:21:23:3F:6E': {'name': 'beacon_6', 'rssi': -78.0},
         '4C:C3:82:C4:27:AA': {'name': 'beacon_7', 'rssi': -93.5},
     }
-    # TODO: если мы вдруг начинаем не с нуля, то нужно уметь изменить эту точку
-    # возможно на всякий ее передавать с инфой выше
-    KNOWN_CALIBRATION_POINT = (0.0, 0.0)
-
-    def __init__(self):
+    def __init__(self, base_point: Tuple[float, float] = (0.0, 0.0)):
         self.alpha = -59.0  # RSSI на 1м (будет калиброваться)
         self.beta = 2.0     # Path loss exponent (будет калиброваться)
         self.prev_position: Optional[Tuple[float, float]] = None
+        self.known_calibration_point = base_point  # Базовая калибровочная точка из БД
 
     @staticmethod
     def rssi_to_distance(rssi: float, alpha: float, beta: float) -> float:
@@ -226,8 +223,8 @@ class AdvancedPositioningEngine:
                 rssi = float(info['rssi'])
                 bx, by = beacons[name]
                 d = math.hypot(
-                    self.KNOWN_CALIBRATION_POINT[0] - bx,
-                    self.KNOWN_CALIBRATION_POINT[1] - by
+                    self.known_calibration_point[0] - bx,
+                    self.known_calibration_point[1] - by
                 )
                 if d > 0:
                     vals.append(rssi + 10.0 * self.beta * math.log10(d))
@@ -237,7 +234,7 @@ class AdvancedPositioningEngine:
             self.alpha, self.beta = self.calibrate_alpha_beta(
                 beacons,
                 self.CALIBRATION_MEASUREMENTS,
-                self.KNOWN_CALIBRATION_POINT,
+                self.known_calibration_point,
                 initial_beta=2.0
             )
 
@@ -378,12 +375,8 @@ class AdvancedPositioningEngine:
             start_xy = self.prev_position
             prior_xy = self.prev_position
         else:
-            used_beacons = [beacons_map[n] for n in distances.keys()]
-            start_xy = (
-                sum(b[0] for b in used_beacons) / len(used_beacons),
-                sum(b[1] for b in used_beacons) / len(used_beacons)
-            )
-            prior_xy = start_xy
+            start_xy = self.known_calibration_point
+            prior_xy = self.known_calibration_point
 
         try:
             x, y = self.solve_position_nlls(
