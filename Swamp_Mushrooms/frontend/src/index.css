@@ -1,0 +1,5 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+@import "https://unpkg.com/leaflet/dist/leaflet.css";
+body { font-family: Arial, sans-serif; margin: 0; padding: 0; }

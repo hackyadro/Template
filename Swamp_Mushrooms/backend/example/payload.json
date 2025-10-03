@@ -1,9 +1,0 @@
-{
-  "device_id": "test_device_1",
-  "scan": [
-    {"beacon_id": "beacon_1", "rssi": -50},
-    {"beacon_id": "beacon_2", "rssi": -55},
-    {"beacon_id": "beacon_3", "rssi": -60}
-  ],
-  "timestamp_us": 1696246200000000
-}
