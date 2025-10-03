@@ -50,19 +50,35 @@ def generate_certificates():
             print("Warning: Failed to generate certificates automatically")
             print("You may need to generate them manually or disable TLS")
 
+def str2bool(val: str) -> bool:
+    return str(val).strip().lower() in ("1", "true", "yes", "on")
+
 def run_server(host="0.0.0.0", port=8000, reload=True):
-    """Run the FastAPI server"""
-    print(f"Starting FastAPI server on {host}:{port}")
+    """Run the FastAPI server (HTTP or HTTPS depending on env)"""
+    use_tls = str2bool(os.getenv("FASTAPI_TLS_ON", "false"))
+    ssl_cert = os.getenv("SSL_CERT_FILE", "./certs/server.crt")
+    ssl_key = os.getenv("SSL_KEY_FILE", "./certs/server.key")
+
+    mode = "HTTPS" if use_tls else "HTTP"
+    print(f"Starting FastAPI server on {host}:{port} ({mode})")
     try:
         import uvicorn
-        uvicorn.run(
-            "main:app",
-            host=host,
-            port=port,
-            reload=reload,
-            ssl_keyfile="./certs/server.key",
-            ssl_certfile="./certs/server.crt"
-        )
+        if use_tls:
+            uvicorn.run(
+                "main:app",
+                host=host,
+                port=port,
+                reload=reload,
+                ssl_keyfile=ssl_key,
+                ssl_certfile=ssl_cert,
+            )
+        else:
+            uvicorn.run(
+                "main:app",
+                host=host,
+                port=port,
+                reload=reload,
+            )
     except ImportError:
         print("Error: uvicorn not installed. Run with --install-deps first")
         sys.exit(1)

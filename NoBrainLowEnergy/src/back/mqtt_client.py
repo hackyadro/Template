@@ -1,12 +1,13 @@
-from distance_model import Distance_model
+from distance_model import CorrectedDistanceModel, Distance_model, RobustDistanceModel
 import asyncio
 import ssl
 import json
 import logging
-from typing import Dict, Any, List, Optional, Callable
+from typing import Dict, Any, List, Optional, Callable, Tuple
 from datetime import datetime
 from collections import deque
 import os
+from threading import Event, Lock
 
 import paho.mqtt.client as mqtt
 from paho.mqtt.client import MQTTMessage
@@ -15,8 +16,8 @@ from models import ReceivedMQTTMessage, QoSLevel
 
 # InfluxDB client
 try:
-    from influxdb_client import InfluxDBClient, Point
-    from influxdb_client.client.write_api import SYNCHRONOUS
+    from influxdb_client import InfluxDBClient, Point  # type: ignore[attr-defined]
+    from influxdb_client.client.write_api import SYNCHRONOUS  # type: ignore[attr-defined]
 except Exception:  # Library may not be installed in some environments
     InfluxDBClient = None
     Point = None
@@ -39,7 +40,8 @@ class MQTTClient:
             ca_cert_path: Optional[str] = None,
             cert_file_path: Optional[str] = None,
             key_file_path: Optional[str] = None,
-            tls_insecure: bool = False
+            tls_insecure: bool = False,
+            beacon_positions: Optional[Dict[str, Tuple[float, float]]] = None,
     ):
         self.broker_host = broker_host
         self.broker_port = broker_port
@@ -51,7 +53,8 @@ class MQTTClient:
         self.cert_file_path = cert_file_path
         self.key_file_path = key_file_path
         self.tls_insecure = tls_insecure
-        self.distance_model = Distance_model()
+        self.distance_model = CorrectedDistanceModel()
+        self.beacon_positions: Dict[str, Tuple[float, float]] = dict(beacon_positions or {})
 
         # InfluxDB settings (lazy init)
         self._influx_client = None
@@ -72,6 +75,12 @@ class MQTTClient:
 
         # Callbacks
         self.message_callbacks: Dict[str, Callable] = {}
+
+        # Beacon configuration sync primitives
+        self._beacon_config_ready = Event()
+        self._beacon_positions_lock = Lock()
+        if self.beacon_positions:
+            self._beacon_config_ready.set()
 
     # -------- InfluxDB helpers --------
     def _ensure_influx(self):
@@ -146,6 +155,44 @@ class MQTTClient:
     def is_connected(self) -> bool:
         """Check if client is connected"""
         return self._connected and self._client and self._client.is_connected()
+
+    def has_beacon_config(self) -> bool:
+        """Return True if beacon configuration has been provided."""
+        return self._beacon_config_ready.is_set()
+
+    async def wait_for_beacon_config(self, timeout: Optional[float] = None) -> bool:
+        """Wait asynchronously until beacon configuration is available."""
+        if self._beacon_config_ready.is_set():
+            return True
+
+        loop = asyncio.get_running_loop()
+
+        def _wait() -> bool:
+            return self._beacon_config_ready.wait(timeout)
+
+        try:
+            result = await loop.run_in_executor(None, _wait)
+            return bool(result)
+        except Exception:
+            return False
+
+    def update_beacon_positions(self, positions: Dict[str, Tuple[float, float]]) -> None:
+        """Update beacon coordinates and mark configuration as ready."""
+        with self._beacon_positions_lock:
+            self.beacon_positions = dict(positions)
+
+        if positions:
+            self._beacon_config_ready.set()
+            logger.info("Beacon configuration updated (%d entries)", len(positions))
+        else:
+            self._beacon_config_ready.clear()
+            logger.warning("Beacon configuration cleared; distance processing paused")
+
+    def get_beacon_positions(self) -> Dict[str, Tuple[float, float]]:
+        """Return a copy of the current beacon positions."""
+        with self._beacon_positions_lock:
+            return dict(self.beacon_positions)
+
 
     async def connect(self) -> None:
         """Connect to MQTT broker"""
@@ -385,21 +432,37 @@ class MQTTClient:
                     except Exception as e:
                         logger.error(f"Error in message callback: {e}")
 
-            positional_data = self.distance_model.Calc(received_msg)
+            if not self.has_beacon_config():
+                logger.debug("Beacon configuration not yet loaded; skipping distance calculation")
+                return
+
+            with self._beacon_positions_lock:
+                beacon_positions = dict(self.beacon_positions)
+
+            if not beacon_positions:
+                logger.debug("Beacon configuration empty; skipping distance calculation")
+                return
+
             try:
-                position = positional_data.get("position") if isinstance(positional_data, dict) else None
+                estimate = self.distance_model.get_position_from_message(received_msg, beacon_positions)
+
+                if estimate[0] is float("nan") or estimate[1] is float("nan"):
+                    positional_data = self.distance_model.Calc(received_msg)
+                    payload = positional_data
+                else:
+                    payload = estimate
+                    print("Position: " + str(payload))
             except Exception:
-                position = None
-            if position is not None:
-                self._write_position_to_influx(position, received_msg.topic, received_msg.timestamp)
-            # Optionally forward to front-end if such integration exists
-            try:
-                front.send(positional_data)  # type: ignore[name-defined]
+                logger.debug("Failed to compute position from beacon distances", exc_info=True)
+                return
+
+            try: # TODO: DOES THIS WORK OR NOT?
+                front.send(payload)  # type: ignore[name-defined]
             except Exception:
                 pass
 
-            logger.debug(f"Received message on topic: {msg.topic}")
-            print(f"Received message on topic LOL: {msg.payload}")
+            # logger.debug(f"Received message on topic: {msg.topic}")
+            # print(f"Received message on topic LOL: {msg.payload}")
 
         except json.JSONDecodeError:
             logger.error(f"Failed to decode JSON payload from topic: {msg.topic}")

@@ -4,15 +4,18 @@ from contextlib import asynccontextmanager
 import uvicorn
 import asyncio
 from typing import Dict, Any
+from pathlib import Path
 import logging
 from datetime import datetime
 import os
+import sys
 
+from beacon_loader import load_beacon_positions
 from mqtt_client import MQTTClient
 from models import MessageModel, DeviceStatus, MQTTMessage
-from config import settings
-from routes import router, set_mqtt_client
-from fastapi.responses import JSONResponse
+from routes import router, set_mqtt_client, build_ws_distances_info
+import routes as routes_module
+from fastapi.responses import JSONResponse, RedirectResponse
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -20,9 +23,21 @@ logger = logging.getLogger(__name__)
 
 # Global MQTT client instance
 mqtt_client = None
+SEARCH_ROOT = Path(__file__).resolve().parent
+BEACON_FILE_PATH = SEARCH_ROOT / "cfg" / "locations.beacons"
+
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # app.add_middleware(
+    #     CORSMiddleware,
+    #     allow_origins=[],  # empty list = no origins allowed
+    #     allow_credentials=False,
+    #     allow_methods=[],
+    #     allow_headers=[],
+    # )
+
     """Manage application lifecycle"""
     global mqtt_client
     
@@ -62,6 +77,14 @@ async def lifespan(app: FastAPI):
         f"MQTT config - host: {broker_host}, port: {broker_port_final}, use_tls: {use_tls}, username: {'set' if username else 'unset'}"
     )
 
+    beacon_positions = load_beacon_positions(BEACON_FILE_PATH)
+    app.state.beacon_positions = beacon_positions
+    app.state.beacon_config_path = BEACON_FILE_PATH
+    if beacon_positions:
+        logger.info("Loaded %d beacon locations from %s", len(beacon_positions), BEACON_FILE_PATH)
+    else:
+        logger.warning("No beacon locations loaded from %s", BEACON_FILE_PATH)
+
     mqtt_client = MQTTClient(
         broker_host=broker_host,
         broker_port=broker_port_final,
@@ -70,7 +93,8 @@ async def lifespan(app: FastAPI):
         use_tls=use_tls,
         ca_cert_path=ca_cert_path,
         cert_file_path=cert_file_path,
-        key_file_path=key_file_path
+        key_file_path=key_file_path,
+        beacon_positions=beacon_positions,
     )
     
     # Connect to MQTT broker
@@ -122,6 +146,77 @@ app = FastAPI(
 # Include API routes
 app.include_router(router)
 
+# WebSocket endpoint without API prefix that streams only distances list
+from fastapi import WebSocket, WebSocketDisconnect
+
+@app.websocket("/ws/distance")
+async def ws_distance(websocket: WebSocket):
+    await websocket.accept()
+    queue: asyncio.Queue = asyncio.Queue(maxsize=100)
+    routes_module._distance_subscribers.add(queue)
+    try:
+        while True:
+            item = await queue.get()  # Wait for next distance event; no heartbeat/greeting
+            try:
+                data = item.get("data") if isinstance(item, dict) else None
+                distances = data.get("distances") if isinstance(data, dict) else None
+                if distances is not None:
+                    await websocket.send_json(distances)
+            except Exception:
+                # Silently skip malformed events
+                pass
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        routes_module._distance_subscribers.discard(queue)
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+
+# WebSocket endpoint without API prefix that streams full distance events
+@app.websocket("/ws/distances")
+async def ws_distances(websocket: WebSocket):
+    await websocket.accept()
+    queue: asyncio.Queue = asyncio.Queue(maxsize=100)
+    routes_module._distance_subscribers.add(queue)
+    try:
+        # Optional greeting
+        await websocket.send_json({"type": "hello", "endpoint": "distances"})
+        while True:
+            try:
+                item = await asyncio.wait_for(queue.get(), timeout=routes_module._distance_heartbeat_interval)
+                await websocket.send_json(item)
+            except asyncio.TimeoutError:
+                # Send heartbeat to keep connection alive
+                await websocket.send_json({"type": "heartbeat", "ts": datetime.utcnow().isoformat()})
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        routes_module._distance_subscribers.discard(queue)
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+
+# HTTP GET/HEAD endpoint for /ws/distances to provide info
+@app.api_route("/ws/distances", methods=["GET", "HEAD"], include_in_schema=False)
+async def ws_distances_info():
+    return build_ws_distances_info("/ws/distances")
+
+# Backward-compat redirect: support /devices → /api/v1/devices
+@app.get("/devices")
+async def redirect_devices(request: Request):
+    query = request.url.query
+    target = "/api/v1/devices"
+    if query:
+        target = f"{target}?{query}"
+    return RedirectResponse(url=target, status_code=307)
+
 # Set MQTT client for routes
 if mqtt_client:
     set_mqtt_client(mqtt_client)
@@ -133,14 +228,14 @@ if _allowed:
 else:
     allowed_origins = ["http://localhost:3000", "http://localhost:8080"]
 
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# # Add CORS middleware
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=allowed_origins,
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
 
 @app.get("/")
 async def root():
@@ -231,10 +326,6 @@ if __name__ == "__main__":
         api_port = 8000
 
     debug_env = os.getenv("DEBUG", None)
-    if debug_env is not None:
-        debug_flag = debug_env.strip().lower() in ("1", "true", "yes", "on")
-    else:
-        debug_flag = getattr(settings, "DEBUG", False)
 
     # FastAPI TLS logic (independent)
     fastapi_tls_env = os.getenv("FASTAPI_TLS_ON", None)
@@ -257,14 +348,9 @@ if __name__ == "__main__":
         "main:app",
         host=api_host,
         port=api_port,
-        reload=debug_flag,
         ssl_keyfile=ssl_keyfile,
         ssl_certfile=ssl_certfile
     )
-    if debug_env is not None:
-        debug_flag = debug_env.strip().lower() in ("1", "true", "yes", "on")
-    else:
-        debug_flag = getattr(settings, "DEBUG", False)
 
     # FastAPI TLS logic (independent)
     fastapi_tls_env = os.getenv("FASTAPI_TLS_ON", None)
@@ -287,7 +373,6 @@ if __name__ == "__main__":
         "main:app",
         host=api_host,
         port=api_port,
-        reload=debug_flag,
         ssl_keyfile=ssl_keyfile,
         ssl_certfile=ssl_certfile
     )

@@ -1,5 +1,5 @@
-from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any, List
+from pydantic import BaseModel, Field, validator
+from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime
 from enum import Enum
 
@@ -113,6 +113,36 @@ class PaginatedResponse(BaseModel):
     page: int
     size: int
     pages: int
+
+
+class BeaconPosition(BaseModel):
+    """Single beacon position payload"""
+
+    name: str = Field(..., alias="Name", description="Unique beacon identifier")
+    x: float = Field(..., alias="X", description="Beacon X coordinate")
+    y: float = Field(..., alias="Y", description="Beacon Y coordinate")
+
+    class Config:
+        allow_population_by_field_name = True
+        anystr_strip_whitespace = True
+
+    @validator("name")
+    def _validate_name(cls, value: str) -> str:
+        if not value:
+            raise ValueError("Beacon name cannot be empty")
+        return value
+
+    def as_tuple(self) -> Tuple[float, float]:
+        return float(self.x), float(self.y)
+
+
+class BeaconConfig(BaseModel):
+    """Beacon configuration upload payload"""
+
+    positions: List[BeaconPosition]
+
+    class Config:
+        allow_population_by_field_name = True
 
 class MQTTConnectionConfig(BaseModel):
     """MQTT connection configuration"""

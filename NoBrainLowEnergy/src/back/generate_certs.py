@@ -111,52 +111,6 @@ def set_permissions(certs_dir: Path):
     for cert_file in certs_dir.glob("*.crt"):
         cert_file.chmod(0o644)
 
-def create_mosquitto_config(certs_dir: Path):
-    """Create a sample Mosquitto configuration with TLS"""
-    config_content = f"""# Mosquitto Configuration for NoBrainLowEnergy
-# Save this as mosquitto.conf
-
-# General settings
-listener 1883 localhost
-protocol mqtt
-
-# TLS listener
-listener 8883
-protocol mqtt
-cafile {certs_dir.absolute()}/ca.crt
-certfile {certs_dir.absolute()}/server.crt
-keyfile {certs_dir.absolute()}/server.key
-require_certificate true
-use_identity_as_username true
-
-# Logging
-log_type error
-log_type warning  
-log_type notice
-log_type information
-log_type debug
-
-# Persistence
-persistence true
-persistence_location /tmp/mosquitto/
-
-# Security
-allow_anonymous false
-
-# Password file (create with mosquitto_passwd)
-# password_file /path/to/passwd
-
-# ACL file (optional)
-# acl_file /path/to/acl
-"""
-    
-    config_file = certs_dir.parent / "mosquitto.conf"
-    with open(config_file, "w") as f:
-        f.write(config_content)
-    
-    print(f"Mosquitto configuration created: {config_file}")
-    print("To use this configuration:")
-    print(f"  mosquitto -c {config_file}")
 
 def main():
     """Main function to generate all certificates"""
@@ -182,9 +136,7 @@ def main():
         
         # Set permissions
         set_permissions(certs_dir)
-        
-        # Create Mosquitto config
-        create_mosquitto_config(certs_dir)
+    
         
         print("\n" + "=" * 50)
         print("Certificate generation completed successfully!")
