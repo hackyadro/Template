@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>BNav</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="container">
+      <canvas id="mapCanvas"></canvas>
+
+      <div class="upload-container">
+        <input type="file" id="fileInput" accept="*/*" style="display: none;">
+        <button id="routeButton" class="route-button">Начать маршрут</button>
+        <button id="uploadButton" class="upload-button">Загрузить файл</button>
+      </div>
+
+      <div id="statusPanel" class="status-panel collapsed">
+        <div id="connectionStatus" class="connection-status disconnected">
+          Отключен
+        </div>
+        <div>
+          <strong id="messageLine">Маячки</strong>
+        </div>
+        <div id="statusValues" class="status-values">
+          <div class="status-item">
+            <span>Нет данных</span>
+          </div>
+        </div>
+      </div>
+      <div id="playerInfo" class="player-info">
+        <div>Позиция: <span id="playerPos">Неизвестно</span></div>
+        <div>Объекты: <span id="objectCount">0</span></div>
+      </div>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
