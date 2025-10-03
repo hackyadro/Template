@@ -7,13 +7,13 @@ import math
 import numpy as np
 import os
 
-BROKER = "192.168.1.104"
+BROKER = "mqtt"
 PORT = 1883
 TOPIC = "beacons/discovered"
 
-FILE_BEACONS = "../standart.beacons"
-FILE_PATH = "../standart.path"
-FILE_CALIBRATION = "calibration.json"
+FILE_BEACONS = "/app/standart.beacons"
+FILE_PATH = "/app/standart.path"
+FILE_CALIBRATION = "/app/calibration.json"
 
 DEFAULT_TX_POWER = -59.0
 DEFAULT_PATHLOSS_EXP = 2.0

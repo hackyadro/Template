@@ -1,3 +1,4 @@
+
 version: "3.9"
 
 services:
@@ -7,7 +8,7 @@ services:
     restart: unless-stopped
     ports:
       - "1883:1883"
-      - "9201:9001"
+      - "9001:9001"
     volumes:
       - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
 
@@ -16,18 +17,10 @@ services:
       context: .
       dockerfile: ./Dockerfile.locator
     container_name: locator
-    env_file:
-      - .env
     depends_on:
       - mqtt
-    environment:
-      MQTT_BROKER: mqtt
-      MQTT_PORT: 1883
-      MQTT_TOPIC: beacons/discovered
-      BEACONS_FILE: /data/standart.beacons
-      PATH_FILE: /data/standart.path
     volumes:
-      - ./standart.beacons:/data/standart.beacons
-      - ./standart.path:/data/standart.path
+      - ./standart.beacons:/app/standart.beacons:ro
+      - ./standart.path:/app/standart.path:rw
+      - ./scripts/calibration.json:/app/calibration.json:ro
     restart: unless-stopped
-
