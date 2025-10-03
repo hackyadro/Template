@@ -7,13 +7,17 @@ import cors from 'cors';
 import { fileURLToPath } from 'url';
 import mqtt from 'mqtt';
 import getBeacons from './beacons.js';
-import trilaterate from './locationcals.js';
+import { createTracker } from './locationcals.js'; // исправлен импорт
 
+// Добавить эту функцию (или удалить её вызовы)
+async function improvedTrilaterate(dirname, rssi) {
+    console.log('Legacy trilateration called with:', rssi);
+    return { x: 0, y: 0, error: 'legacy_method' };
+}
 dotenv.config();
 const port = process.env.PORT;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
 
 const app = express();
 app.use(compression());
@@ -22,6 +26,7 @@ app.use(bodyParser.json());
 
 let clients = [];
 let state = [];
+let tracker;
 
 console.log('Server starting');
 console.log('Endpoints registered: /, /beacons, /api/state, /api/status');
@@ -36,6 +41,27 @@ const mqttClient = mqtt.connect(`mqtt://${mqttHost}:${mqttPort}`, {
 
 const mqttTopics = ['skynet/#', 'beacons/rssi'];
 
+
+async function initializeTracker() {
+    try {
+        tracker = await createTracker(".");
+        console.log('Beacon tracker initialized');
+        
+        tracker.on('position', ({ position, usedBeacons, timestamp }) => {
+            console.log('New position:', position);
+            state = position;
+            notifyClients();
+        });
+        
+        tracker.on('error', (error) => {
+            console.error('Tracker error:', error);
+        });
+        
+    } catch (error) {
+        console.error('Failed to initialize tracker:', error);
+    }
+}
+
 mqttClient.on('connect', () => {
     console.log('Connected to MQTT');
     
@@ -46,27 +72,38 @@ mqttClient.on('connect', () => {
             } else {
                 console.log(`Subscribed on ${topic}`);
             }
-        })
+        });
     });
 });
 
 mqttClient.on('message', async (topic, message) => {
-    console.log(`MQTT recieved: [${topic}]`, message.toString());
+    console.log(`MQTT received: [${topic}]`, message.toString());
     
     try {
         const data = JSON.parse(message.toString());
         console.log('Got data:', data);
         
-        const rssi = data.data || data;
-        state = await trilaterate(__dirname, rssi);
-        console.log('Updated state:', state);
+        if (topic === 'beacons/rssi') {
+            if (tracker) {
+                tracker.addRSSIData(data);
+                console.log('Data sent to tracker');
+            } else {
+                console.log('Tracker not initialized yet, using legacy method');
+                const rssi = data.data || data;
+                state = await improvedTrilaterate(__dirname, rssi);
+                notifyClients();
+            }
+        } else {
+            const rssi = data.data || data;
+            state = await improvedTrilaterate(__dirname, rssi);
+            notifyClients();
+        }
         
-        notifyClients();
-        console.log('Clients notified');
+        console.log('Updated state:', state);
         
     } catch (e) {
         console.log('Parsing error:', e.message);
-        state = [{ error: 'parse_error', message: message.toString() }];
+        state = { error: 'parse_error', message: message.toString() };
         notifyClients();
     }
 });
@@ -76,7 +113,7 @@ mqttClient.on('error', (err) => {
 });
 
 app.get('/', (req, res) => {
-	res.sendFile(path.join(__dirname, 'index.html'));
+    res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
 app.get('/api/position', (req, res) => {
@@ -114,7 +151,7 @@ app.get('/api/position', (req, res) => {
 });
 
 function genUniqueId(){
-	return Date.now() + '-' + Math.floor(Math.random() * 1_000_000_000);
+    return Date.now() + '-' + Math.floor(Math.random() * 1_000_000_000);
 }
 
 function notifyClients() {
@@ -126,7 +163,7 @@ function notifyClients() {
             client.res.write(sendData);
             client.res.flush();
         } catch (err) {
-            console.log(`Error sendig to ${client.id}:`, err.message);
+            console.log(`Error sending to ${client.id}:`, err.message);
             disconnectedClients.push(index);
         }
     });
@@ -138,13 +175,24 @@ function notifyClients() {
 }
 
 app.get('/api/beacons', async (req, res) => {
-	const beacons = await getBeacons(__dirname);
-	res.json(beacons);
+    const beacons = await getBeacons(__dirname);
+    res.json(beacons);
 });
 
 app.get('/api/state', (req, res) => {
     res.json({
         state: state,
+        clientsCount: clients.length,
+        timestamp: new Date().toISOString()
+    });
+});
+
+app.get('/api/tracker-status', (req, res) => {
+    const bufferStatus = tracker ? tracker.getBufferStatus() : {};
+    
+    res.json({
+        trackerInitialized: !!tracker,
+        bufferStatus: bufferStatus,
         clientsCount: clients.length,
         timestamp: new Date().toISOString()
     });
@@ -164,6 +212,7 @@ app.get('/api/status', (req, res) => {
         status: 'running',
         clients: clients.length,
         mqtt_connected: mqttClient ? mqttClient.connected : false,
+        tracker_initialized: !!tracker,
         timestamp: new Date().toISOString()
     });
 });
@@ -171,7 +220,7 @@ app.get('/api/status', (req, res) => {
 app.get('/api/mqtt-info', (req, res) => {
     res.json({
         connected: mqttClient ? mqttClient.connected : false,
-        topics: ['skynet/data', 'skynet/events', 'skynet/test'],
+        topics: mqttTopics,
         timestamp: new Date().toISOString()
     });
 });
@@ -191,6 +240,24 @@ app.post('/api/test-mqtt', (req, res) => {
     });
 });
 
+app.post('/api/simulate-beacons', (req, res) => {
+    const testData = req.body;
+    
+    if (tracker) {
+        tracker.addRSSIData(testData);
+        res.json({ 
+            success: true, 
+            message: 'Данные маяков отправлены в трекер',
+            data: testData
+        });
+    } else {
+        res.status(500).json({ 
+            success: false, 
+            message: 'Трекер не инициализирован'
+        });
+    }
+});
+
 app.post('/api/simulate-mqtt', (req, res) => {
     const testData = req.body;
     
@@ -208,6 +275,13 @@ app.get('/api/ping', (req, res) => {
     res.json({ status: 'ok', time: new Date().toISOString() });
 });
 
-app.listen(port, () => {
-    console.log(`Starting server on ${port}`);
-});
+// Запускаем сервер после инициализации
+async function startServer() {
+    await initializeTracker();
+    
+    app.listen(port, () => {
+        console.log(`Server started on port ${port}`);
+    });
+}
+
+startServer().catch(console.error);

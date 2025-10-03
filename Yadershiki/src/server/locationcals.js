@@ -1,117 +1,213 @@
+import { EventEmitter } from 'events';
 import getBeacons from './beacons.js';
+import * as math from 'mathjs';
 
-function addRSSIData(beaconCoordinates, rssiDataList) {
+
+class DistanceEstimator {
+  constructor(bufferSize = 20, measuredPower = -59, envFactor = 4) {
+    this.bufferSize = bufferSize;
+    this.measuredPower = measuredPower;
+    this.envFactor = envFactor;
+    this.buffers = {
+      logModel: [],
+      fspl: [],
+      linear: []
+    };
+  }
+
+  rssiToDistanceLog(rssi) {
+    return Math.pow(10, (this.measuredPower - rssi) / (10 * this.envFactor));
+  }
+
+  rssiToDistanceFSPL(rssi, freqMHz = 2400) {
+    return Math.pow(10, (27.55 - (20 * Math.log10(freqMHz)) + Math.abs(rssi)) / 20.0);
+  }
+
+  rssiToDistanceLinear(rssi) {
+    return Math.max(0.1, (this.measuredPower - rssi) * 0.1);
+  }
+
+  addRSSI(rssi) {
+    const d1 = this.rssiToDistanceLog(rssi);
+    const d2 = this.rssiToDistanceFSPL(rssi);
+    const d3 = this.rssiToDistanceLinear(rssi);
+
+    this._addToBuffer(this.buffers.logModel, d1);
+    this._addToBuffer(this.buffers.fspl, d2);
+    this._addToBuffer(this.buffers.linear, d3);
+  }
+
+  _addToBuffer(buffer, value) {
+    if (buffer.length >= this.bufferSize) buffer.shift();
+    buffer.push(value);
+  }
+
+  getDistance() {
+    const averages = [];
+    for (const buf of Object.values(this.buffers)) {
+      if (buf.length > 0) {
+        const avg = buf.reduce((a, b) => a + b, 0) / buf.length;
+        averages.push(avg);
+      }
+    }
+    if (averages.length > 0) {
+      return averages.reduce((a, b) => a + b, 0) / averages.length;
+    }
+    return null;
+  }
+}
+
+
+class BeaconTracker extends EventEmitter {
+  constructor(beacons, options = {}) {
+    super();
+    this.beacons = this.normalizeBeacons(beacons);
+    this.bufferSize = options.bufferSize || 50;
+    this.rssiBuffers = {};
+    this.estimators = {};
+    this.updateInterval = options.updateInterval || 1000;
+
+    setInterval(() => this.processBuffers(), this.updateInterval);
+  }
+
+  normalizeBeacons(beaconsArray) {
+    const beaconsObj = {};
+    beaconsArray.forEach(beacon => {
+      beaconsObj[beacon.name] = {
+        x: beacon.x,
+        y: beacon.y,
+        measuredPower: beacon.measuredPower || -59,
+        environmentalFactor: beacon.environmentalFactor || 3.0
+      };
+    });
+    return beaconsObj;
+  }
+
+  addRssi(beaconName, rssi) {
+    if (!this.rssiBuffers[beaconName]) this.rssiBuffers[beaconName] = [];
+    this.rssiBuffers[beaconName].push(rssi);
+    if (this.rssiBuffers[beaconName].length > this.bufferSize) this.rssiBuffers[beaconName].shift();
+
+    if (!this.estimators[beaconName]) {
+      const beacon = this.beacons[beaconName];
+      this.estimators[beaconName] = new DistanceEstimator(
+        this.bufferSize,
+        beacon ? beacon.measuredPower : -59,
+        beacon ? beacon.environmentalFactor : 2.0
+      );
+    }
+    this.estimators[beaconName].addRSSI(rssi);
+  }
+
+  addRSSIData(rssiDataList) {
     rssiDataList.forEach(rssiData => {
-        if (Array.isArray(rssiData) && rssiData.length === 2) {
-            const beaconName = rssiData[0];
-            const rssiValue = rssiData[1]; 
-            
-            const beacon = beaconCoordinates.find(b => b.name === beaconName);
-            if (beacon) {
-                beacon.RSSI = rssiValue;
-            }
-        }
+      if (Array.isArray(rssiData) && rssiData.length === 2) {
+        const beaconName = rssiData[0];
+        const rssiValue = rssiData[1];
+        this.addRssi(beaconName, rssiValue);
+      }
     });
-    
-    return beaconCoordinates;
-}
+  }
 
-function sortBeaconsByRSSI(beaconCoordinates) {
-    return beaconCoordinates.filter((beacon) => beacon.RSSI !== undefined).sort((b, a) => {
-        return a.RSSI - b.RSSI;
-    });
-}
+  processBuffers() {
+    const distances = {};
+    const usedBeacons = [];
 
-function getTopThreeBeacons(sortedBeacons) {
-    return sortedBeacons.slice(0, 3);
-}
+    for (const [beaconName, samples] of Object.entries(this.rssiBuffers)) {
+      const beacon = this.beacons[beaconName];
+      if (!beacon) continue;
 
-function rssiToDistance(rssi, measuredPower = -59, environmentalFactor = 4) {
-    return Math.pow(10, (measuredPower - rssi) / (10 * environmentalFactor));
-}
+      const estimator = this.estimators[beaconName];
+      const distance = estimator ? estimator.getDistance() : null;
+      if (distance == null) continue;
 
-function calculateBeaconDistances(topThreeBeacons) {
-    return topThreeBeacons.map(beacon => {
-        return {
-            ...beacon,
-            distance: rssiToDistance(beacon.RSSI)
-        };
-    });
-}
-
-function trilaterateThreeCircles(circles) {
-    if (circles.length < 3) {
-        console.log("There are not enough circles for trilateration");
-        return null;
+      distances[beaconName] = distance;
+      usedBeacons.push({
+        name: beaconName,
+        rssi: samples[samples.length - 1],
+        distance: distance,
+        x: beacon.x,
+        y: beacon.y
+      });
     }
 
-    const [c1, c2, c3] = circles.slice(0, 3);
-    
-    const A = c2.x - c1.x;
-    const B = c2.y - c1.y;
-    const C = c3.x - c1.x;
-    const D = c3.y - c1.y;
-    
-    const r1_sq = c1.distance * c1.distance;
-    const r2_sq = c2.distance * c2.distance;
-    const r3_sq = c3.distance * c3.distance;
-    
-    const right1 = (r1_sq - r2_sq + c2.x*c2.x - c1.x*c1.x + c2.y*c2.y - c1.y*c1.y) / 2;
-    const right2 = (r1_sq - r3_sq + c3.x*c3.x - c1.x*c1.x + c3.y*c3.y - c1.y*c1.y) / 2;
-    
-    const determinant = A * D - B * C;
-    
-    if (Math.abs(determinant) < 1e-10) {
-        console.log("The circles are degenerate or parallel, and it is impossible to find a point of intersection");
-        return null;
+
+    if (Object.keys(distances).length >= 3) {
+      const pos = this.trilaterate(distances);
+      if (pos) this.emit('position', { position: pos, usedBeacons, timestamp: new Date().toISOString() });
+      else console.log('Trilateration failed');
+    } else {
+      console.log(`Not enough beacons for trilateration: ${Object.keys(distances).length}/3`);
     }
-    
-    const x = (right1 * D - B * right2) / determinant;
-    const y = (A * right2 - right1 * C) / determinant;
-    
-    const maxX = Math.max(c1.x, c2.x, c3.x) + Math.max(c1.distance, c2.distance, c3.distance);
-    const minX = Math.min(c1.x, c2.x, c3.x) - Math.max(c1.distance, c2.distance, c3.distance);
-    const maxY = Math.max(c1.y, c2.y, c3.y) + Math.max(c1.distance, c2.distance, c3.distance);
-    const minY = Math.min(c1.y, c2.y, c3.y) - Math.max(c1.distance, c2.distance, c3.distance);
-    
-    // if (x < minX || x > maxX || y < minY || y > maxY) {
-    //     console.log("The found point goes beyond reasonable limits");
-    //     return null;
-    // }
-    
-    return { x: x, y: y };
+  }
+
+  trilaterate(distances) {
+    const keys = Object.keys(distances);
+    if (keys.length < 3) return null;
+
+    const bestBeacons = keys
+      .map(key => ({ key, distance: distances[key] }))
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, 3)
+      .map(item => item.key);
+
+    const A = [];
+    const b = [];
+    const refKey = bestBeacons[0];
+    const refBeacon = this.beacons[refKey];
+    const refDist = distances[refKey];
+
+    for (let i = 1; i < bestBeacons.length; i++) {
+      const key = bestBeacons[i];
+      const beacon = this.beacons[key];
+      const dist = distances[key];
+
+      const dx = beacon.x - refBeacon.x;
+      const dy = beacon.y - refBeacon.y;
+
+      A.push([2 * dx, 2 * dy]);
+      b.push(
+        Math.pow(refDist, 2) - Math.pow(dist, 2) -
+        Math.pow(refBeacon.x, 2) + Math.pow(beacon.x, 2) -
+        Math.pow(refBeacon.y, 2) + Math.pow(beacon.y, 2)
+      );
+    }
+
+    try {
+      const AT = math.transpose(A);
+      const ATA = math.multiply(AT, A);
+      const ATb = math.multiply(AT, b);
+      const sol = math.lusolve(ATA, ATb);
+
+      const x = sol[0][0] + refBeacon.x;
+      const y = sol[1][0] + refBeacon.y;
+      return { x, y };
+    } catch (error) {
+      console.log('Trilateration error:', error.message);
+      return null;
+    }
+  }
+
+  getBufferStatus() {
+    const status = {};
+    for (const [beaconName, buffer] of Object.entries(this.rssiBuffers)) {
+      const estimator = this.estimators[beaconName];
+      status[beaconName] = {
+        samples: buffer.length,
+        lastRSSI: buffer.length > 0 ? buffer[buffer.length - 1] : null,
+        estimatedDistance: estimator ? estimator.getDistance() : null
+      };
+    }
+    return status;
+  }
 }
 
+// === Фабрика трекера ===
+async function createTracker(dirname, options = {}) {
+  const beaconsArray = await getBeacons(dirname);
+  const tracker = new BeaconTracker(beaconsArray, options);
 
-export default async function trilaterate(dirname, rssiData) {
-    const beacons = await getBeacons(dirname);
-    addRSSIData(beacons, rssiData);
-    const sortedBeacons = sortBeaconsByRSSI(beacons);
-    const topThreeBeacons = getTopThreeBeacons(sortedBeacons);
-    
-    const beaconsWithDistances = calculateBeaconDistances(topThreeBeacons);
-    
-    const estimatedPosition = trilaterateThreeCircles(beaconsWithDistances);
-    
-    return estimatedPosition;
+  return tracker;
 }
 
-// 1. Поставьте приемник на 1 метр от маячка
-// 2. Измерьте RSSI 10-20 раз
-// 3. Возьмите среднее
-
-// function calibrateBeacon(beaconMac) {
-//     const measurements = [-58, -59, -57, -60, -58, -59];
-//     const averageRSSI = measurements.reduce((a, b) => a + b) / measurements.length;
-    
-//     beaconConfigs[beaconMac] = {
-//         measuredPower: Math.round(averageRSSI), // ≈ -59
-//         txPower: -4,
-//         type: 'ESP32-BEACON'
-//     };
-    
-//     return averageRSSI;
-// }
-
-
-// trilaterate(".", rssi);
+export { BeaconTracker, createTracker };

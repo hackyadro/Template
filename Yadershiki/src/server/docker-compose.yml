@@ -1,7 +1,5 @@
-version: '3.8'
-
 services:
-  # Основной сервер (получатель MQTT)
+  # Основной сервер
   app:
     build:
       context: .
@@ -11,27 +9,9 @@ services:
       - "8080:8080"
     environment:
       - NODE_ENV=production
-      - MQTT_HOST=emqx  # ← используем имя сервиса
+      - MQTT_HOST=emqx
       - MQTT_PORT=1883
-    command: node server.js  # ← явно указываем запуск основного сервера
-    depends_on:
-      - emqx
-    restart: unless-stopped
-    networks:
-      - app-network
-
-  # MQTT отправитель (используем тот же образ)
-  mqtt-sender:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: mqtt-sender
-    ports:
-      - "8085:8085"
-    environment:
-      - MQTT_HOST=emqx  # ← используем имя сервиса
-      - MQTT_PORT=1883
-    command: node skynet-mqtt-sender.js  # ← запускаем отправитель
+    command: node server.js
     depends_on:
       - emqx
     restart: unless-stopped
@@ -43,11 +23,11 @@ services:
     image: emqx/emqx:5.4
     container_name: emqx
     ports:
-      - "1883:1883"
+      - "1883:1883" # порт
       - "8083:8083"
       - "8084:8084"
       - "8883:8883"
-      - "8081:18083"  # Web Dashboard
+      - "8081:18083"  
     environment:
       - EMQX_NODE_NAME=emqx@node
     restart: unless-stopped
