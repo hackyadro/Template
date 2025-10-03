@@ -3,6 +3,9 @@ install rust and bun
 
 Не забыть везде заменить ip в 
 HOST_ADDRESS = "10.145.244.78:8000"
+и
+SSID = "iPhone (Владимир)"
+PASSWORD = "12345678"
 run client: bun run tauri dev
 или собрать билд в приложение: bun run tauri build
 

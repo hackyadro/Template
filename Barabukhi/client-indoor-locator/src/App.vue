@@ -71,6 +71,35 @@ const sendWs = (msg: OutMsg) => {
   }
 };
 
+const downloadCoordinatesFile = (mac: string, coordinates: Array<{x: number; y: number}>) => {
+  if (!coordinates || coordinates.length === 0) {
+    console.warn('Нет координат для сохранения');
+    return;
+  }
+
+  let content = 'X;Y\n';
+  coordinates.forEach(coord => {
+    const x = Number(coord.x).toFixed(1).replace('.', ',');
+    const y = Number(coord.y).toFixed(1).replace('.', ',');
+    content += `${x};${y}\n`;
+  });
+
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  link.download = `road_${mac}_${timestamp}.path`;
+  
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+  
+  console.log(`Файл сохранён: ${link.download}`);
+};
+
 const applyAllDevice = (data: any) => {
   const arr = Array.isArray(data) ? data : [];
   for (const d of arr) {
@@ -132,12 +161,15 @@ const handleWsMessage = (msg: InMsg) => {
     return;
   }
   if (msg.type === 'last_road') {
-    // Временный вывод ответа о последнем маршруте в консоль
     const d = msg.data || {};
     const mac = d?.mac;
     const roadId = d?.road_id;
     const cords = Array.isArray(d?.cords) ? d.cords : [];
     console.log('[last_road]', { mac, road_id: roadId, pointsCount: cords.length, cords });
+    
+    if (mac && cords.length > 0) {
+      downloadCoordinatesFile(mac, cords);
+    }
     return;
   }
   console.warn('Unhandled WS type:', msg.type, msg.data);
