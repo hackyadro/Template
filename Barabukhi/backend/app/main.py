@@ -102,7 +102,7 @@ async def get_or_create_device(mac: str, db: AsyncSession) -> int:
             "mac": mac,
             "map_id": map_id,
             "poll_frequency": 1.0,
-            "write_road": True,
+            "write_road": False,
             "color": "#3b82f6"
         }
     )
@@ -392,7 +392,7 @@ async def send_signal(request: SendSignalRequest, db: AsyncSession = Depends(get
 
     # Получаем или создаём устройство
     result = await db.execute(
-        text("SELECT id, map_id, write_road FROM devices WHERE mac = :mac"),
+        text("SELECT id, map_id, write_road, current_road_session_id FROM devices WHERE mac = :mac"),
         {"mac": request.mac}
     )
     device = result.first()
@@ -426,10 +426,12 @@ async def send_signal(request: SendSignalRequest, db: AsyncSession = Depends(get
         )
         device_id = device_insert.scalar()
         write_road = True
+        road_session_id = None
         await db.commit()
     else:
         device_id = device.id
         write_road = device.write_road
+        road_session_id = device.current_road_session_id
 
     # Получаем последнюю позицию для использования в алгоритме как prior
     last_position_result = await db.execute(
@@ -490,8 +492,8 @@ async def send_signal(request: SendSignalRequest, db: AsyncSession = Depends(get
         if write_road:
             await db.execute(
                 text("""
-                    INSERT INTO positions (device_id, map_id, x_coordinate, y_coordinate, accuracy, algorithm)
-                    VALUES (:device_id, :map_id, :x, :y, :accuracy, :algorithm)
+                    INSERT INTO positions (device_id, map_id, x_coordinate, y_coordinate, accuracy, algorithm, road_session_id)
+                    VALUES (:device_id, :map_id, :x, :y, :accuracy, :algorithm, :road_session_id)
                 """),
                 {
                     "device_id": device_id,
@@ -499,7 +501,8 @@ async def send_signal(request: SendSignalRequest, db: AsyncSession = Depends(get
                     "x": x,
                     "y": y,
                     "accuracy": accuracy,
-                    "algorithm": algorithm
+                    "algorithm": algorithm,
+                    "road_session_id": road_session_id
                 }
             )
 
@@ -855,11 +858,84 @@ async def websocket_endpoint(websocket: WebSocket, db: AsyncSession = Depends(ge
                         }))
                         continue
 
-                    # Обновляем статус записи для устройства
-                    await db.execute(
-                        text("UPDATE devices SET write_road = :status WHERE mac = :mac"),
-                        {"status": bool(status), "mac": mac}
+                    # Получаем устройство и его текущий статус
+                    device_result = await db.execute(
+                        text("SELECT id, write_road FROM devices WHERE mac = :mac"),
+                        {"mac": mac}
                     )
+                    device = device_result.first()
+
+                    if not device:
+                        await websocket.send_text(json.dumps({
+                            "type": "error",
+                            "data": {"message": "Device not found"}
+                        }))
+                        continue
+
+                    device_id = device.id
+                    old_status = device.write_road
+                    new_status = bool(status)
+
+                    # Если меняем false -> true, создаём новую road_session
+                    if not old_status and new_status:
+                        # Закрываем все предыдущие активные сессии для этого устройства
+                        await db.execute(
+                            text("""
+                                UPDATE road_sessions
+                                SET is_active = false, ended_at = CURRENT_TIMESTAMP
+                                WHERE device_id = :device_id AND is_active = true
+                            """),
+                            {"device_id": device_id}
+                        )
+
+                        # Создаём новую сессию с уникальным именем (timestamp)
+                        session_name = f"road_{int(time.time())}"
+                        session_result = await db.execute(
+                            text("""
+                                INSERT INTO road_sessions (device_id, name, is_active)
+                                VALUES (:device_id, :name, true)
+                                RETURNING id
+                            """),
+                            {"device_id": device_id, "name": session_name}
+                        )
+                        session_id = session_result.scalar()
+
+                        # Обновляем устройство: статус записи и текущую сессию
+                        await db.execute(
+                            text("""
+                                UPDATE devices
+                                SET write_road = :status, current_road_session_id = :session_id
+                                WHERE mac = :mac
+                            """),
+                            {"status": new_status, "session_id": session_id, "mac": mac}
+                        )
+                    elif old_status and not new_status:
+                        # Если меняем true -> false, закрываем текущую сессию
+                        await db.execute(
+                            text("""
+                                UPDATE road_sessions
+                                SET is_active = false, ended_at = CURRENT_TIMESTAMP
+                                WHERE device_id = :device_id AND is_active = true
+                            """),
+                            {"device_id": device_id}
+                        )
+
+                        # Обновляем статус устройства
+                        await db.execute(
+                            text("""
+                                UPDATE devices
+                                SET write_road = :status, current_road_session_id = NULL
+                                WHERE mac = :mac
+                            """),
+                            {"status": new_status, "mac": mac}
+                        )
+                    else:
+                        # Если статус не меняется, просто обновляем
+                        await db.execute(
+                            text("UPDATE devices SET write_road = :status WHERE mac = :mac"),
+                            {"status": new_status, "mac": mac}
+                        )
+
                     await db.commit()
 
                     # Отправляем обновлённый список устройств
@@ -890,12 +966,91 @@ async def websocket_endpoint(websocket: WebSocket, db: AsyncSession = Depends(ge
                         "data": devices_list
                     }))
 
-                # Обработка write_road (опционально - для будущего расширения)
-                elif msg_type == "write_road":
-                    # На данный момент просто подтверждаем получение
+                # Обработка download_last_road
+                elif msg_type == "download_last_road":
+                    data = message.get("data", {})
+                    mac = data.get("mac")
+
+                    if not mac:
+                        await websocket.send_text(json.dumps({
+                            "type": "error",
+                            "data": {"message": "mac is required"}
+                        }))
+                        continue
+
+                    # Получаем устройство
+                    device_result = await db.execute(
+                        text("SELECT id FROM devices WHERE mac = :mac"),
+                        {"mac": mac}
+                    )
+                    device = device_result.first()
+
+                    if not device:
+                        await websocket.send_text(json.dumps({
+                            "type": "error",
+                            "data": {"message": "Device not found"}
+                        }))
+                        continue
+
+                    device_id = device.id
+
+                    # Получаем последнюю завершённую road_session для этого устройства
+                    session_result = await db.execute(
+                        text("""
+                            SELECT id, name, started_at, ended_at
+                            FROM road_sessions
+                            WHERE device_id = :device_id AND is_active = false
+                            ORDER BY started_at DESC
+                            LIMIT 1
+                        """),
+                        {"device_id": device_id}
+                    )
+                    session = session_result.first()
+
+                    if not session:
+                        await websocket.send_text(json.dumps({
+                            "type": "last_road",
+                            "data": {
+                                "mac": mac,
+                                "road_id": None,
+                                "cords": []
+                            }
+                        }))
+                        continue
+
+                    road_id = session.name
+                    session_id = session.id
+
+                    # Получаем все позиции для этой сессии
+                    positions_result = await db.execute(
+                        text("""
+                            SELECT x_coordinate, y_coordinate, created_at
+                            FROM positions
+                            WHERE road_session_id = :session_id
+                            ORDER BY created_at ASC
+                        """),
+                        {"session_id": session_id}
+                    )
+                    positions = positions_result.fetchall()
+
+                    # Формируем массив координат
+                    cords = [
+                        {
+                            "x": float(p.x_coordinate),
+                            "y": float(p.y_coordinate),
+                            "timestamp": p.created_at.isoformat()
+                        }
+                        for p in positions
+                    ]
+
+                    # Отправляем ответ
                     await websocket.send_text(json.dumps({
-                        "type": "write_road",
-                        "data": {"ok": True}
+                        "type": "last_road",
+                        "data": {
+                            "mac": mac,
+                            "road_id": road_id,
+                            "cords": cords
+                        }
                     }))
 
                 else:

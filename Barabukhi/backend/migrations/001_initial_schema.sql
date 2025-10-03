@@ -109,29 +109,29 @@ FOR EACH ROW
 EXECUTE FUNCTION track_device_changes();
 
 -- Вставляем тестовые данные
-INSERT INTO maps (name) VALUES ('yadro_nsu') ON CONFLICT (name) DO NOTHING;
+-- INSERT INTO maps (name) VALUES ('yadro_nsu') ON CONFLICT (name) DO NOTHING;
 INSERT INTO maps (name) VALUES ('kpa_nsu') ON CONFLICT (name) DO NOTHING;
 
 -- Получаем ID созданных карт и вставляем маяки
 DO $$
 DECLARE
-    yadro_map_id INTEGER;
+    -- yadro_map_id INTEGER;
     kpa_map_id INTEGER;
 BEGIN
-    SELECT id INTO yadro_map_id FROM maps WHERE name = 'yadro_nsu';
+    -- SELECT id INTO yadro_map_id FROM maps WHERE name = 'yadro_nsu';
     SELECT id INTO kpa_map_id FROM maps WHERE name = 'kpa_nsu';
 
-    -- Вставляем маяки для yadro_nsu
-    INSERT INTO beacons (map_id, name, x_coordinate, y_coordinate) VALUES
-        (yadro_map_id, 'beacon_1', 3.0, -2.4),
-        (yadro_map_id, 'beacon_2', -2.4, -0.6),
-        (yadro_map_id, 'beacon_3', 1.8, 9.0),
-        (yadro_map_id, 'beacon_4', 4.8, 18.6),
-        (yadro_map_id, 'beacon_5', -1.8, 26.4),
-        (yadro_map_id, 'beacon_6', -1.8, 34.2),
-        (yadro_map_id, 'beacon_7', 7.8, 34.2),
-        (yadro_map_id, 'beacon_8', -1.8, 40.8)
-    ON CONFLICT (map_id, name) DO NOTHING;
+    -- -- Вставляем маяки для yadro_nsu
+    -- INSERT INTO beacons (map_id, name, x_coordinate, y_coordinate) VALUES
+    --     (yadro_map_id, 'beacon_1', 3.0, -2.4),
+    --     (yadro_map_id, 'beacon_2', -2.4, -0.6),
+    --     (yadro_map_id, 'beacon_3', 1.8, 9.0),
+    --     (yadro_map_id, 'beacon_4', 4.8, 18.6),
+    --     (yadro_map_id, 'beacon_5', -1.8, 26.4),
+    --     (yadro_map_id, 'beacon_6', -1.8, 34.2),
+    --     (yadro_map_id, 'beacon_7', 7.8, 34.2),
+    --     (yadro_map_id, 'beacon_8', -1.8, 40.8)
+    -- ON CONFLICT (map_id, name) DO NOTHING;
 
     -- Вставляем маяки для kpa_nsu
     INSERT INTO beacons (map_id, name, x_coordinate, y_coordinate) VALUES
