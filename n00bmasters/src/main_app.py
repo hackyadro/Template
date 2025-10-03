@@ -112,7 +112,7 @@ def on_message(client, userdata, msg):
         kalman_filter.predict()
         kalman_filter.update(np.array([[raw_pos[0]], [raw_pos[1]]]))
         filtered_state = kalman_filter.kf.x
-        if dist(cur_pos, (filtered_state[0], filtered_state[1])) < 5 or not fl:
+        if dist(cur_pos, (filtered_state[0], filtered_state[1])) < 7 or not fl:
             cur_pos = [filtered_state[0], filtered_state[1]]
             fl = True
         pos_x.append(cur_pos[0])
