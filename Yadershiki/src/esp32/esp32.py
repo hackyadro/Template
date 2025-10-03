@@ -1,3 +1,4 @@
+
 import bluetooth
 from micropython import const
 import time
@@ -12,7 +13,9 @@ _ADV_TYPE_NAME = const(0x09)
 ble = bluetooth.BLE()
 ble.active(True)
 
-beacons = {}
+beacons_history = {}
+HISTORY_SIZE = 6
+
 scan_done = False
 
 def decode_name(adv_data):
@@ -29,19 +32,37 @@ def decode_name(adv_data):
     return None
 
 def bt_irq(event, data):
-    global beacons, scan_done
+    global beacons_history, scan_done
     if event == _IRQ_SCAN_RESULT:
         addr_type, addr, adv_type, rssi, adv_data = data
         name = decode_name(adv_data)
         if name and name.startswith(config_esp32.BEACON_PREFIX):
-            if name not in beacons or rssi > beacons[name]:
-                beacons[name] = rssi
+            if name not in beacons_history:
+                beacons_history[name] = []
+            
+            beacons_history[name].append(rssi)
+            
+            if len(beacons_history[name]) > HISTORY_SIZE:
+                beacons_history[name].pop(0)
+                
     elif event == _IRQ_SCAN_DONE:
         scan_done = True
 
+def calculate_median(values):
+    """Вычисляет медиану из списка значений"""
+    if not values:
+        return None
+    
+    sorted_values = sorted(values)
+    n = len(sorted_values)
+    
+    if n % 2 == 1:
+        return sorted_values[n // 2]
+    else:
+        return (sorted_values[n // 2 - 1] + sorted_values[n // 2]) // 2
+
 def scan_once(duration_ms=config_esp32.SCAN_DURATION_MS):
-    global beacons, scan_done
-    beacons = {}
+    global beacons_history, scan_done
     scan_done = False
     ble.irq(bt_irq)
     ble.gap_scan(duration_ms, 30000, 30000)
@@ -49,23 +70,55 @@ def scan_once(duration_ms=config_esp32.SCAN_DURATION_MS):
     while not scan_done:
         time.sleep_ms(config_esp32.SCAN_FREQ)
     
-    beacons_sorted = sorted(beacons.items(), key=lambda x: x[1], reverse=True)
-    return [[name, rssi] for name, rssi in beacons_sorted]
+    beacons_processed = {}
+    
+    all_beacons = {}
+    for name, rssi_list in beacons_history.items():
+        if rssi_list:
+            all_beacons[name] = rssi_list[-1]
+    
+
+    beacons_sorted = sorted(all_beacons.items(), key=lambda x: x[1], reverse=True)
+    
+
+    top_3_names = [name for name, _ in beacons_sorted[:3]]
+    for name in top_3_names:
+        rssi_list = beacons_history[name]
+        if len(rssi_list) >= 3:
+            median_rssi = calculate_median(rssi_list)
+            beacons_processed[name] = median_rssi
+        else:
+            beacons_processed[name] = rssi_list[-1] if rssi_list else 0
+    
+    for name, last_rssi in beacons_sorted[3:]:
+        beacons_processed[name] = last_rssi
+    
+    beacons_final_sorted = sorted(beacons_processed.items(), key=lambda x: x[1], reverse=True)
+    return [[name, rssi] for name, rssi in beacons_final_sorted]
 
 def publish_beacons_data(beacons_data):
     try:
         client = MQTTClient(config_esp32.CLIENT_ID, config_esp32.MQTT_BROKER, port=config_esp32.MQTT_PORT)
         client.connect()
-        beacons_data = [["maxim", -34], ["matvey", -45]]
         if not beacons_data:
             data_str = "NO_BEACONS_FOUND"
             print("Маяки не найдены, отправляем сообщение об отсутствии")
         else:
             data_str = str(beacons_data).replace("'", '"')
             print(f"Найдено маяков: {len(beacons_data)}")
+            
+            for i, (name, rssi) in enumerate(beacons_data):
+                history_len = len(beacons_history.get(name, []))
+                if i < 3:
+                    marker = "TOP 3"
+                    method = "медиана"
+                else:
+                    marker = "LAST"  
+                    method = "последнее значение"
+                print(f"  {marker} {name}: RSSI={rssi} dBm ({history_len} изм., {method})")
         
         client.publish(config_esp32.MQTT_TOPIC, data_str)
-        print(f"Опубликовано в топик {config_esp32.MQTT_TOPIC}: {data_str}")
+        print(f"Опубликовано в топик {config_esp32.MQTT_TOPIC}")
         
         client.disconnect()
         return True
@@ -90,12 +143,12 @@ def connect_wifi():
     
     return wlan
 
-
 wlan = connect_wifi()
 
 if wlan.isconnected():
     print("Успешно подключено к Wi-Fi")
     print('IP адрес:', wlan.ifconfig()[0])
+
     
     while True:
         try:
