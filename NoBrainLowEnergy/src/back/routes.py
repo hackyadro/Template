@@ -1,14 +1,21 @@
-from fastapi import APIRouter, HTTPException, Query, Form, WebSocket, WebSocketDisconnect
-from typing import List, Optional, Annotated, Any, Dict
+from fastapi import APIRouter, HTTPException, Query, Form, WebSocket, WebSocketDisconnect, Request, Body
+import logging
+import csv
+from typing import List, Optional, Annotated, Any, Dict, Tuple
+from pydantic import ValidationError
 from datetime import datetime, timedelta
 import asyncio
 import json
+from pathlib import Path
 
 from models import (
     SensorData, DeviceStatus, DeviceCommand, AlertMessage,
-    SystemStatus, APIResponse, PaginatedResponse
+    SystemStatus, APIResponse, PaginatedResponse,
+    BeaconPosition
 )
 from mqtt_client import MQTTClient
+
+logger = logging.getLogger(__name__)
 
 # Create router for device-related endpoints
 router = APIRouter(prefix="/api/v1", tags=["devices"])
@@ -59,26 +66,22 @@ def set_mqtt_client(client: MQTTClient):
     # Register a catch-all callback to compute and broadcast distances
     def _on_any_message(received_msg):
         try:
+            if not client.has_beacon_config():
+                return
+
+            beacon_positions: Dict[str, Tuple[float, float]] = client.get_beacon_positions()
+            if not beacon_positions:
+                return
+
             payload = None
             position = None
             distance = None
-
             try:
-                distance = client.distance_model.Calc(received_msg)
+                estimate = client.distance_model.get_position_from_message(received_msg, beacon_positions)
             except Exception:
-                print("_on_message: Distance calculation failed")
-                pass 
+                pass
 
-
-            beacon_positions = getattr(client, "beacon_positions", None)
-            if beacon_positions:
-                try:
-                    position = client.distance_model.get_position_from_message(received_msg, beacon_positions)
-                except Exception:
-                    pass
-
-            
-
+            distance = client.distance_model.Calc(received_msg)
             payload = {"distance": distance, "position": position}
 
             if distance is None and position is None:
@@ -196,17 +199,72 @@ async def get_mqtt_messages(limit: int = Query(50, ge=1, le=100)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to retrieve MQTT messages: {e}")
 
-@router.get("/config/beacon")
-async def get_beacon_config():
-    """Return the current beacon configuration loaded in the MQTT client."""
+
+@router.post("/beacons/config", response_model=APIResponse)
+async def upload_beacon_config(request: Request, payload: Any = Body(...)):
+    """Load beacon locations from JSON payload and update the MQTT client."""
+
+    positions: Dict[str, Tuple[float, float]] = {}
+    skipped: List[Dict[str, Any]] = []
+
+    if isinstance(payload, dict):
+        raw_positions = payload.get("positions")
+    else:
+        raw_positions = payload
+
+    if not isinstance(raw_positions, list):
+        raise HTTPException(status_code=422, detail="Payload must be a list of beacons or contain a 'positions' list")
+
+    for idx, raw_beacon in enumerate(raw_positions, start=1):
+        try:
+            beacon = BeaconPosition.parse_obj(raw_beacon)
+        except ValidationError as exc:
+            skipped.append({"index": idx, "reason": exc.errors()})
+            continue
+
+        name = beacon.name.strip()
+        if not name:
+            skipped.append({"index": idx, "reason": "empty name"})
+            continue
+
+        try:
+            x, y = beacon.as_tuple()
+        except Exception as exc:  # pragma: no cover - defensive
+            skipped.append({"index": idx, "name": name, "reason": str(exc)})
+            continue
+
+        positions[name] = (x, y)
+
+    if not positions:
+        raise HTTPException(status_code=422, detail="No valid beacon positions provided")
+
     if not mqtt_client:
         raise HTTPException(status_code=503, detail="MQTT client not initialized")
+
+    mqtt_client.update_beacon_positions(positions)
+
+    # Persist in application state for other components
     try:
-        return {
-            "beacon_positions": getattr(mqtt_client, "beacon_positions", {}),
-            "distance_model": {
-                "env_const": getattr(mqtt_client.distance_model, "env_const", None)
-            } if mqtt_client.distance_model else None
+        request.app.state.beacon_positions = positions
+    except Exception:
+        pass
+
+    config_path = getattr(request.app.state, "beacon_config_path", None)
+    if isinstance(config_path, Path):
+        try:
+            with config_path.open("w", encoding="utf-8", newline="") as fp:
+                writer = csv.writer(fp, delimiter=";")
+                writer.writerow(["Name", "X", "Y"])
+                for name, (x, y) in positions.items():
+                    writer.writerow([name, x, y])
+        except Exception:
+            logger.warning("Failed to persist beacon configuration to %s", config_path, exc_info=True)
+
+    return APIResponse(
+        status="OK",
+        message=f"Loaded {len(positions)} beacon positions",
+        data={
+            "stored": len(positions),
+            "skipped": skipped,
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve beacon configuration: {e}")
+    )

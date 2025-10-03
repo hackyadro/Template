@@ -7,6 +7,7 @@ from typing import Dict, Any, List, Optional, Callable, Tuple
 from datetime import datetime
 from collections import deque
 import os
+from threading import Event, Lock
 
 import paho.mqtt.client as mqtt
 from paho.mqtt.client import MQTTMessage
@@ -74,6 +75,12 @@ class MQTTClient:
 
         # Callbacks
         self.message_callbacks: Dict[str, Callable] = {}
+
+        # Beacon configuration sync primitives
+        self._beacon_config_ready = Event()
+        self._beacon_positions_lock = Lock()
+        if self.beacon_positions:
+            self._beacon_config_ready.set()
 
     # -------- InfluxDB helpers --------
     def _ensure_influx(self):
@@ -148,6 +155,44 @@ class MQTTClient:
     def is_connected(self) -> bool:
         """Check if client is connected"""
         return self._connected and self._client and self._client.is_connected()
+
+    def has_beacon_config(self) -> bool:
+        """Return True if beacon configuration has been provided."""
+        return self._beacon_config_ready.is_set()
+
+    async def wait_for_beacon_config(self, timeout: Optional[float] = None) -> bool:
+        """Wait asynchronously until beacon configuration is available."""
+        if self._beacon_config_ready.is_set():
+            return True
+
+        loop = asyncio.get_running_loop()
+
+        def _wait() -> bool:
+            return self._beacon_config_ready.wait(timeout)
+
+        try:
+            result = await loop.run_in_executor(None, _wait)
+            return bool(result)
+        except Exception:
+            return False
+
+    def update_beacon_positions(self, positions: Dict[str, Tuple[float, float]]) -> None:
+        """Update beacon coordinates and mark configuration as ready."""
+        with self._beacon_positions_lock:
+            self.beacon_positions = dict(positions)
+
+        if positions:
+            self._beacon_config_ready.set()
+            logger.info("Beacon configuration updated (%d entries)", len(positions))
+        else:
+            self._beacon_config_ready.clear()
+            logger.warning("Beacon configuration cleared; distance processing paused")
+
+    def get_beacon_positions(self) -> Dict[str, Tuple[float, float]]:
+        """Return a copy of the current beacon positions."""
+        with self._beacon_positions_lock:
+            return dict(self.beacon_positions)
+
 
     async def connect(self) -> None:
         """Connect to MQTT broker"""
@@ -387,25 +432,33 @@ class MQTTClient:
                     except Exception as e:
                         logger.error(f"Error in message callback: {e}")
 
-            if self.beacon_positions:
-                try:
-                    estimate = self.distance_model.get_position_from_message(received_msg, self.beacon_positions)
+            if not self.has_beacon_config():
+                logger.debug("Beacon configuration not yet loaded; skipping distance calculation")
+                return
 
-                    if estimate[0] is float("nan") or estimate[1] is float("nan"):
-                        positional_data = self.distance_model.Calc(received_msg)
-                        payload = positional_data
-                    else:
-                        payload = estimate
-                        print("Position: " + str(payload))
-                        if payload is not None:
-                            print("influx is commented out")
-                            # self._write_position_to_influx(payload, received_msg.topic, received_msg.timestamp)
-                            # print("Position: " + position)
-                except Exception:
-                    logger.debug("Failed to compute position from beacon distances", exc_info=True)
-            else:
-                positional_data = self.distance_model.Calc(received_msg)
-                payload = positional_data
+            with self._beacon_positions_lock:
+                beacon_positions = dict(self.beacon_positions)
+
+            if not beacon_positions:
+                logger.debug("Beacon configuration empty; skipping distance calculation")
+                return
+
+            try:
+                estimate = self.distance_model.get_position_from_message(received_msg, beacon_positions)
+
+                if estimate[0] is float("nan") or estimate[1] is float("nan"):
+                    positional_data = self.distance_model.Calc(received_msg)
+                    payload = positional_data
+                else:
+                    payload = estimate
+                    print("Position: " + str(payload))
+                    if payload is not None:
+                        # print("influx is commented out")
+                            #self._write_position_to_influx(payload, received_msg.topic, received_msg.timestamp)
+                        # print("Position: " + position)
+            except Exception:
+                logger.debug("Failed to compute position from beacon distances", exc_info=True)
+                return
 
             try: # TODO: DOES THIS WORK OR NOT?
                 front.send(payload)  # type: ignore[name-defined]

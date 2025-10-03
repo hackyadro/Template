@@ -69,6 +69,7 @@ async def lifespan(app: FastAPI):
 
     beacon_positions = load_beacon_positions(BEACON_FILE_PATH)
     app.state.beacon_positions = beacon_positions
+    app.state.beacon_config_path = BEACON_FILE_PATH
     if beacon_positions:
         logger.info("Loaded %d beacon locations from %s", len(beacon_positions), BEACON_FILE_PATH)
     else:
