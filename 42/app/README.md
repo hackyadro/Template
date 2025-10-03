@@ -203,3 +203,27 @@ subscriber  | 2025-10-03T10:21:00 esp32-34cd0b33a6c4 {"seq": 15, "rssi": -62, "u
 
 Если такие строки появляются — значит, MQTT брокер и подписчик работают корректно, и данные от ESP успешно принимаются.
 
+В случае если не получилось запустить через docker 
+
+В папке 42/app
+```
+python3 -m venv .venv
+```
+```
+source .venv/bin/activate
+```
+```
+pip install -r requirements.txt
+```
+
+Все шаги с ufw и запуском бута. 
+
+```
+python3 app/app.py
+```
+
+в другом терминале
+
+```
+python3 app/subscriber.py
+```
