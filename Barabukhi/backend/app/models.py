@@ -38,16 +38,46 @@ class SignalData(BaseModel):
     signal: int  # RSSI
 
 
+class SignalDataWithSamples(BaseModel):
+    """Данные о сигнале от маяка с количеством измерений"""
+    name: str
+    signal: int  # RSSI
+    samples: int = 1  # количество измерений
+
+
 class SendSignalRequest(BaseModel):
     """Запрос на отправку сигналов"""
+    name: str  # имя устройства
     mac: str
-    map_name: str
-    list: List[SignalData]
+    map: str  # название карты
+    list: List[SignalDataWithSamples]
 
 
 class SendSignalResponse(BaseModel):
     """Ответ на отправку сигналов"""
     accept: bool
+
+
+class SetMapToDeviceRequest(BaseModel):
+    """Запрос на установку карты устройству"""
+    mac: str
+    map: str  # название карты
+
+
+class SetMapToDeviceResponse(BaseModel):
+    """Ответ на установку карты"""
+    success: bool
+
+
+class SetFreqRequest(BaseModel):
+    """Запрос на установку частоты опроса"""
+    mac: str
+    freq: float
+
+
+class SetFreqResponse(BaseModel):
+    """Ответ на установку частоты"""
+    success: bool
 
 
 # ==================== Frontend API Models ====================
@@ -57,6 +87,18 @@ class BeaconInput(BaseModel):
     name: str
     x: float
     y: float
+
+
+class AddMapRequest(BaseModel):
+    """Запрос на добавление новой карты"""
+    map: str  # название карты
+    beacons: List[BeaconInput]
+
+
+class AddMapResponse(BaseModel):
+    """Ответ на добавление карты"""
+    success: bool
+    map_id: int
 
 
 class BeaconResponse(BaseModel):

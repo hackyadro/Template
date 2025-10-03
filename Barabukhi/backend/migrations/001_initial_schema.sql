@@ -30,15 +30,6 @@ CREATE TABLE IF NOT EXISTS devices (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Создание таблицы для измерений сигналов от маяков
-CREATE TABLE IF NOT EXISTS signal_measurements (
-    id SERIAL PRIMARY KEY,
-    device_id INTEGER REFERENCES devices(id) ON DELETE CASCADE,
-    beacon_name VARCHAR(100) NOT NULL,
-    signal_strength INTEGER NOT NULL, -- RSSI
-    measured_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
 -- Создание таблицы для вычисленных позиций
 CREATE TABLE IF NOT EXISTS positions (
     id SERIAL PRIMARY KEY,
@@ -64,8 +55,6 @@ CREATE TABLE IF NOT EXISTS device_changes (
 CREATE INDEX IF NOT EXISTS idx_beacons_map_id ON beacons(map_id);
 CREATE INDEX IF NOT EXISTS idx_devices_mac ON devices(mac);
 CREATE INDEX IF NOT EXISTS idx_devices_map_id ON devices(map_id);
-CREATE INDEX IF NOT EXISTS idx_signal_measurements_device_id ON signal_measurements(device_id);
-CREATE INDEX IF NOT EXISTS idx_signal_measurements_measured_at ON signal_measurements(measured_at);
 CREATE INDEX IF NOT EXISTS idx_positions_device_id ON positions(device_id);
 CREATE INDEX IF NOT EXISTS idx_positions_created_at ON positions(created_at);
 CREATE INDEX IF NOT EXISTS idx_device_changes_device_id ON device_changes(device_id);
@@ -134,16 +123,11 @@ BEGIN
         (map_id_var, 'beacon_1', 3.0, -2.4),
         (map_id_var, 'beacon_2', -2.4, -0.6),
         (map_id_var, 'beacon_3', 1.8, 9.0),
-        (map_id_var, 'beacon_4', -1.2, 5.5),
-        (map_id_var, 'beacon_5', 4.5, 3.2),
-        (map_id_var, 'beacon_6', -3.8, 7.1),
-        (map_id_var, 'beacon_7', 2.2, -4.8),
-        (map_id_var, 'beacon_8', -0.5, 1.3)
+        (map_id_var, 'beacon_4', 4.8, 18.6),
+        (map_id_var, 'beacon_5', -1.8, 26.4),
+        (map_id_var, 'beacon_6', -1.8, 34.2),
+        (map_id_var, 'beacon_7', 7.8, 34.2),
+        (map_id_var, 'beacon_8', -1.8, 40.8)
     ON CONFLICT (map_id, name) DO NOTHING;
 END $$;
 
--- Вставляем тестовое устройство
-INSERT INTO devices (name, mac, map_id, poll_frequency, write_road, color)
-SELECT 'Test Device', '00:11:22:33:44:55', id, 1.0, true, '#ef4444'
-FROM maps WHERE name = 'office_floor_1'
-ON CONFLICT (mac) DO NOTHING;

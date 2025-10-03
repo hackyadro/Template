@@ -11,8 +11,11 @@ from app.models import (
     # Device API models (BLE devices)
     MacRequest, FreqResponse, StatusRoadResponse, MapResponse,
     PingResponse, SendSignalRequest, SendSignalResponse,
+    SetMapToDeviceRequest, SetMapToDeviceResponse,
+    SetFreqRequest, SetFreqResponse,
+    AddMapRequest, AddMapResponse,
     # Frontend API models
-    MapCreateRequest, MapResponse2, BeaconResponse,
+    MapCreateRequest, MapResponse2, BeaconResponse, BeaconInput,
     DeviceCreateRequest, DeviceUpdateRequest, DeviceResponse,
     PositionRequest, PositionResponse, PathPoint, DevicePathResponse
 )
@@ -45,7 +48,8 @@ async def root():
         "message": "Indoor Navigation API",
         "version": "2.0.0",
         "endpoints": {
-            "device_api": ["/get_freq", "/get_status_road", "/get_map", "/ping", "/send_signal"],
+            "device_api": ["/get_freq", "/get_status_road", "/get_map", "/ping", "/send_signal",
+                          "/set_map_to_device", "/set_freq", "/add_map"],
             "frontend_api": ["/api/maps", "/api/devices", "/api/position", "/api/path"],
             "websocket": "/ws"
         }
@@ -225,10 +229,164 @@ async def ping(request: MacRequest, db: AsyncSession = Depends(get_db)):
     return PingResponse(change=True, change_list=change_list)
 
 
+@app.post("/set_map_to_device", response_model=SetMapToDeviceResponse)
+async def set_map_to_device(request: SetMapToDeviceRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Установить карту для устройства по MAC адресу.
+    Создает устройство если не существует.
+    """
+    # Получаем или создаём карту
+    map_result = await db.execute(
+        text("SELECT id FROM maps WHERE name = :map_name"),
+        {"map_name": request.map}
+    )
+    map_data = map_result.first()
+
+    if not map_data:
+        # Создаём карту если не существует
+        map_insert = await db.execute(
+            text("INSERT INTO maps (name) VALUES (:map_name) RETURNING id"),
+            {"map_name": request.map}
+        )
+        map_id = map_insert.scalar()
+    else:
+        map_id = map_data.id
+
+    # Получаем или создаём устройство
+    device_result = await db.execute(
+        text("SELECT id FROM devices WHERE mac = :mac"),
+        {"mac": request.mac}
+    )
+    device = device_result.first()
+
+    if device:
+        # Обновляем map_id для существующего устройства
+        await db.execute(
+            text("UPDATE devices SET map_id = :map_id WHERE mac = :mac"),
+            {"map_id": map_id, "mac": request.mac}
+        )
+    else:
+        # Создаём новое устройство с указанной картой
+        await db.execute(
+            text("""
+                INSERT INTO devices (name, mac, map_id, poll_frequency, write_road, color)
+                VALUES (:name, :mac, :map_id, :poll_frequency, :write_road, :color)
+            """),
+            {
+                "name": f"Device_{request.mac}",
+                "mac": request.mac,
+                "map_id": map_id,
+                "poll_frequency": 1.0,
+                "write_road": True,
+                "color": "#3b82f6"
+            }
+        )
+
+    await db.commit()
+    return SetMapToDeviceResponse(success=True)
+
+
+@app.post("/set_freq", response_model=SetFreqResponse)
+async def set_freq(request: SetFreqRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Установить частоту опроса для устройства по MAC адресу.
+    Создает устройство если не существует.
+    """
+    # Получаем или создаём устройство
+    device_result = await db.execute(
+        text("SELECT id FROM devices WHERE mac = :mac"),
+        {"mac": request.mac}
+    )
+    device = device_result.first()
+
+    if device:
+        # Обновляем частоту для существующего устройства
+        await db.execute(
+            text("UPDATE devices SET poll_frequency = :freq WHERE mac = :mac"),
+            {"freq": request.freq, "mac": request.mac}
+        )
+    else:
+        # Создаём новое устройство с указанной частотой
+        # Привязываем к дефолтной карте если она есть
+        map_result = await db.execute(
+            text("SELECT id FROM maps ORDER BY id LIMIT 1")
+        )
+        map_data = map_result.first()
+        map_id = map_data.id if map_data else None
+
+        await db.execute(
+            text("""
+                INSERT INTO devices (name, mac, map_id, poll_frequency, write_road, color)
+                VALUES (:name, :mac, :map_id, :poll_frequency, :write_road, :color)
+            """),
+            {
+                "name": f"Device_{request.mac}",
+                "mac": request.mac,
+                "map_id": map_id,
+                "poll_frequency": request.freq,
+                "write_road": True,
+                "color": "#3b82f6"
+            }
+        )
+
+    await db.commit()
+    return SetFreqResponse(success=True)
+
+
+@app.post("/add_map", response_model=AddMapResponse)
+async def add_map(request: AddMapRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Добавить новую карту с маяками.
+    Если карта уже существует, обновляет список маяков.
+    """
+    # Проверяем существование карты
+    map_result = await db.execute(
+        text("SELECT id FROM maps WHERE name = :map_name"),
+        {"map_name": request.map}
+    )
+    map_data = map_result.first()
+
+    if map_data:
+        # Карта уже существует, используем её ID
+        map_id = map_data.id
+
+        # Удаляем старые маяки для этой карты
+        await db.execute(
+            text("DELETE FROM beacons WHERE map_id = :map_id"),
+            {"map_id": map_id}
+        )
+    else:
+        # Создаём новую карту
+        map_insert = await db.execute(
+            text("INSERT INTO maps (name) VALUES (:map_name) RETURNING id"),
+            {"map_name": request.map}
+        )
+        map_id = map_insert.scalar()
+
+    # Добавляем маяки
+    for beacon in request.beacons:
+        await db.execute(
+            text("""
+                INSERT INTO beacons (map_id, name, x_coordinate, y_coordinate)
+                VALUES (:map_id, :name, :x, :y)
+            """),
+            {
+                "map_id": map_id,
+                "name": beacon.name,
+                "x": beacon.x,
+                "y": beacon.y
+            }
+        )
+
+    await db.commit()
+    return AddMapResponse(success=True, map_id=map_id)
+
+
 @app.post("/send_signal", response_model=SendSignalResponse)
 async def send_signal(request: SendSignalRequest, db: AsyncSession = Depends(get_db)):
     """
-    Принять данные о сигналах от маяков и вычислить позицию
+    Принять данные о сигналах от маяков и вычислить позицию.
+    Новая сигнатура: name, mac, map, list:{name, signal, samples}
     """
     global engine_calibrated
 
@@ -239,53 +397,62 @@ async def send_signal(request: SendSignalRequest, db: AsyncSession = Depends(get
     )
     device = result.first()
 
+    # Получаем или создаём карту
+    map_result = await db.execute(
+        text("SELECT id FROM maps WHERE name = :map_name"),
+        {"map_name": request.map}
+    )
+    map_data = map_result.first()
+
+    if not map_data:
+        # Создаём карту если не существует
+        map_insert = await db.execute(
+            text("INSERT INTO maps (name) VALUES (:map_name) RETURNING id"),
+            {"map_name": request.map}
+        )
+        map_id = map_insert.scalar()
+    else:
+        map_id = map_data.id
+
     if not device:
         # Создаём устройство если не существует
-        map_result = await db.execute(
-            text("SELECT id FROM maps WHERE name = :map_name"),
-            {"map_name": request.map_name}
-        )
-        map_data = map_result.first()
-
-        if not map_data:
-            # Создаём карту если не существует
-            map_insert = await db.execute(
-                text("INSERT INTO maps (name) VALUES (:map_name) RETURNING id"),
-                {"map_name": request.map_name}
-            )
-            map_id = map_insert.scalar()
-        else:
-            map_id = map_data.id
-
         device_insert = await db.execute(
             text("""
                 INSERT INTO devices (name, mac, map_id, write_road)
                 VALUES (:name, :mac, :map_id, :write_road)
                 RETURNING id
             """),
-            {"name": f"Device_{request.mac}", "mac": request.mac, "map_id": map_id, "write_road": True}
+            {"name": request.name, "mac": request.mac, "map_id": map_id, "write_road": True}
         )
         device_id = device_insert.scalar()
         write_road = True
         await db.commit()
     else:
         device_id = device.id
-        map_id = device.map_id
         write_road = device.write_road
 
-    # Сохраняем измерения сигналов
-    for signal in request.list:
-        await db.execute(
-            text("""
-                INSERT INTO signal_measurements (device_id, beacon_name, signal_strength)
-                VALUES (:device_id, :beacon_name, :signal_strength)
-            """),
-            {
-                "device_id": device_id,
-                "beacon_name": signal.name,
-                "signal_strength": signal.signal
-            }
-        )
+        # Обновляем имя устройства если оно передано
+        if request.name and request.name != f"Device_{request.mac}":
+            await db.execute(
+                text("UPDATE devices SET name = :name WHERE id = :device_id"),
+                {"name": request.name, "device_id": device_id}
+            )
+
+    # Получаем последнюю позицию для использования в алгоритме как prior
+    last_position_result = await db.execute(
+        text("""
+            SELECT x_coordinate, y_coordinate
+            FROM positions
+            WHERE device_id = :device_id AND map_id = :map_id
+            ORDER BY created_at DESC
+            LIMIT 1
+        """),
+        {"device_id": device_id, "map_id": map_id}
+    )
+    last_position = last_position_result.first()
+
+    if last_position:
+        advanced_engine.last_position = (float(last_position.x_coordinate), float(last_position.y_coordinate))
 
     # Получаем маяки для вычисления позиции
     beacons_result = await db.execute(
@@ -308,14 +475,21 @@ async def send_signal(request: SendSignalRequest, db: AsyncSession = Depends(get
         engine_calibrated = True
         print(f"[Calibration] alpha={advanced_engine.alpha:.3f}, beta={advanced_engine.beta:.3f}")
 
-    # Вычисляем позицию с использованием продвинутого алгоритма
-    signals = [(signal.name, signal.signal) for signal in request.list]
-    position_data = advanced_engine.calculate_position(
-        signals,
+    # Формируем данные для calculate_position_with_samples
+    # report_data: {beacon_name: {'rssi': value, 'samples': count}}
+    report_data = {
+        signal.name: {'rssi': float(signal.signal), 'samples': signal.samples}
+        for signal in request.list
+    }
+
+    # Вычисляем позицию с использованием продвинутого алгоритма с учётом samples
+    position_data = advanced_engine.calculate_position_with_samples(
+        report_data,
         beacons_map_tuples,
         prior_weight=0.1
     )
 
+    # Всегда делаем commit для сохранения измерений сигналов
     if position_data:
         x, y, accuracy, algorithm = position_data
 
@@ -348,6 +522,7 @@ async def send_signal(request: SendSignalRequest, db: AsyncSession = Depends(get
             "timestamp": time.time()
         })
 
+    # Commit должен быть всегда, чтобы сохранить измерения сигналов
     await db.commit()
     return SendSignalResponse(accept=True)
 
