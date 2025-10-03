@@ -20,6 +20,14 @@ cd repo
 cd 42/
 ```
 
+прежде чем начать работу с докером, необходимо открыть порты
+
+```bash
+sudo ufw start
+sudo ufw allow 1883/tcp
+sudo ufw/allow 8501/tcp
+```
+
 ```bash
 docker compose up --build
 ```
@@ -33,6 +41,7 @@ docker compose up -d
 Скорее всего вы увидите ошибки Permission denied. Читайте пункт 7 о том как создать и установить полльзователя для корректно работы докер контейнра
 
 Далее вам необходимо запустить устройство с его boot файлом (читать в README.md из папки esp32.)
+
 
 ## 4. Проверка работы
 - MQTT брокер: `localhost:1883`
@@ -108,6 +117,10 @@ sudo chmod 600 docker/passwd
 
 ```bash
 sudo chmod 755 app/*
+```
+
+```bash
+sudo chmod 644 app/subscriber
 ```
 
 ### 8.3 Конфигурация Docker Compose
