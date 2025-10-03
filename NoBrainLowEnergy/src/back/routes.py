@@ -59,16 +59,18 @@ def set_mqtt_client(client: MQTTClient):
     # Register a catch-all callback to compute and broadcast distances
     def _on_any_message(received_msg):
         try:
-            data = client.distance_model.Calc(received_msg)
-            payload: Dict[str, Any] = dict(data) if isinstance(data, dict) else {"raw": data}
-
+            payload = None
             beacon_positions = getattr(client, "beacon_positions", None)
             if beacon_positions:
                 try:
-                    estimate = client.distance_model.position_from_distances(data, beacon_positions)
-                    payload["position"] = estimate
+                    estimate = client.distance_model.get_position_from_message(received_msg, beacon_positions)
+                    payload = estimate
                 except Exception:
                     pass
+            else:
+                data = client.distance_model.Calc(received_msg)
+                payload = data
+
 
             event = {
                 "type": "distances",
