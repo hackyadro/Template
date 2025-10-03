@@ -389,6 +389,9 @@ class CorrectedDistanceModel(Distance_model):
         if not (math.isfinite(x) and math.isfinite(y)):
             return (float("nan"), float("nan"))
 
+        if (x < 0):
+            x = x + 15
+        
         return (x, y)
 
 class RobustDistanceModel(Distance_model):
