@@ -1,4 +1,4 @@
-from distance_model import Distance_model
+from distance_model import Distance_model, RobustDistanceModel
 import asyncio
 import ssl
 import json
@@ -53,7 +53,7 @@ class MQTTClient:
         self.cert_file_path = cert_file_path
         self.key_file_path = key_file_path
         self.tls_insecure = tls_insecure
-        self.distance_model = Distance_model()
+        self.distance_model = RobustDistanceModel()
         self.beacon_positions: Dict[str, Tuple[float, float]] = dict(beacon_positions or {})
 
         # InfluxDB settings (lazy init)
