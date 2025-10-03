@@ -398,7 +398,8 @@ class MQTTClient:
                         payload = estimate
                         print("Position: " + str(payload))
                         if payload is not None:
-                            self._write_position_to_influx(payload, received_msg.topic, received_msg.timestamp)
+                            print("influx is commented out")
+                            # self._write_position_to_influx(payload, received_msg.topic, received_msg.timestamp)
                             # print("Position: " + position)
                 except Exception:
                     logger.debug("Failed to compute position from beacon distances", exc_info=True)

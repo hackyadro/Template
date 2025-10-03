@@ -60,23 +60,36 @@ def set_mqtt_client(client: MQTTClient):
     def _on_any_message(received_msg):
         try:
             payload = None
+            position = None
+            distance = None
+
+            try:
+                distance = client.distance_model.Calc(received_msg)
+            except Exception:
+                print("_on_message: Distance calculation failed")
+                pass 
+
+
             beacon_positions = getattr(client, "beacon_positions", None)
             if beacon_positions:
                 try:
-                    estimate = client.distance_model.get_position_from_message(received_msg, beacon_positions)
-                    payload = estimate
+                    position = client.distance_model.get_position_from_message(received_msg, beacon_positions)
                 except Exception:
                     pass
-            else:
-                data = client.distance_model.Calc(received_msg)
-                payload = data
 
+            
+
+            payload = {"distance": distance, "position": position}
+
+            if distance is None and position is None:
+                print("distance and position are None, not broadcasting")
+                return
 
             event = {
                 "type": "distances",
                 "topic": received_msg.topic,
                 "timestamp": received_msg.timestamp.isoformat(),
-                "data": payload,
+                "data": payload
             }
             # Schedule broadcast on the main event loop even from non-async threads
             loop = _event_loop
@@ -182,3 +195,18 @@ async def get_mqtt_messages(limit: int = Query(50, ge=1, le=100)):
         return mqtt_client.get_recent_messages(limit=limit)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to retrieve MQTT messages: {e}")
+
+@router.get("/config/beacon")
+async def get_beacon_config():
+    """Return the current beacon configuration loaded in the MQTT client."""
+    if not mqtt_client:
+        raise HTTPException(status_code=503, detail="MQTT client not initialized")
+    try:
+        return {
+            "beacon_positions": getattr(mqtt_client, "beacon_positions", {}),
+            "distance_model": {
+                "env_const": getattr(mqtt_client.distance_model, "env_const", None)
+            } if mqtt_client.distance_model else None
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve beacon configuration: {e}")
