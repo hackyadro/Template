@@ -1,14 +1,16 @@
 import bluetooth
 import time
+import json
 from micropython import const
 from bletools import *
 from mynetwork import *
-from mymqtt import *
+from umqtt.simple import MQTTClient
 
 count: dict[str, int] = {}
-resout: dict[str, str] = {}
-publisher: Client = None
-stop = False
+resout: dict[str, float] = {}
+
+scan_hz: float = 1
+programm_status = 0
 
 _IRQ_SCAN_RESULT = const(5)
 
@@ -39,42 +41,76 @@ def bt_irq(event, data):
             resout[device_name] += rssi
             count[device_name] += 1
 
-    
-if __name__ == "__main__":
-    wifissid = "vivo X200 Pro"
-    password = "Oberon123"
-    print(f"Connecting to {wifissid}...")
-    wifiManager = WiFiManager(wifissid, password)
+def mqtt_message_callback(topic: bytes, message: bytes):
+        global scan_hz
+        global programm_status
+        print(f"recieve mqtt msg from {topic}\n{message}")
+        try:
+            if topic == b"navigation/route/control":
+                data = json.loads(message.decode())
+                if data["command"] == "start_routing":
+                    programm_status = 1
+                    scan_hz = float(data["hz"])
+                elif data["command"] == "end_routing":
+                    programm_status = 0
+                else:
+                    print(f"Unknown command: {data["command"]}")
+                    return
+            else:
+                print(f"Unknown topic {topic}")
+        except Exception as e:
+            print(f"Error while mqtt msg handling: {e}")
+
+def main():
+    global resout
+    global count
+
+    config_data: dict[str, str] = None
+    with open("config.json", "r", encoding="utf-8") as f:
+        config_data = json.load(f)
+
+    print(f"Connecting to {config_data["wifissid"]}...")
+    wifiManager = WiFiManager(config_data["wifissid"], config_data["wifipasswd"])
     if wifiManager.connect():
         print("Wi-Fi connected:", wifiManager.wlan.ifconfig())
     else:
         print("Can't connect to Wi-Fi")
-        exit(1)
+        return
 
     print("Connecting to MQTT broker...")
     try:
-        publisher = Client("ESP32_RSSI", "192.168.186.78", 1883)
-    except:
-        print("Can't connect to MQTT broker")
-        exit(1)
+        client = MQTTClient("ESP32_RSSI", config_data["server_ip"], 1883)
+        client.connect()
+        client.set_callback(mqtt_message_callback)
+        client.subscribe("navigation/route/control")
+    except Exception as e:
+        print(f"Can't connect to MQTT broker: {e}")
+        return
+    
     print("MQTT broker connected")
+
+    client.wait_msg()
 
     ble = bluetooth.BLE()
     ble.active(True)
     ble.irq(bt_irq)
 
     print("Starting BLE scanner...")
-    ble.gap_scan(0, 100000, 100000)
+    timings = int(100000*(1/scan_hz))
+    ble.gap_scan(0, timings, timings)
 
     try:
         while True:
             time.sleep(0.1)
-            if len(resout) >= 4 and sum(count.values()) >= 15:
+            if len(resout) >= 4:
                 resout = dict(map(lambda x: (x[0], x[1]/count[x[0]]), resout.items()))
                 print(resout)
-                publisher.send_data("ble/beacons/raw", resout)
+                client.publish(b"ble/beacons/raw", str(resout).encode())
                 resout.clear()
                 count.clear()
     except KeyboardInterrupt:
-        print("Scan stopped by user")
+        print("Programm stopped by user")
         ble.gap_scan(None)
+    
+if __name__ == "__main__":
+    main()
