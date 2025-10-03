@@ -1,0 +1,2 @@
+
+MIN_DISTANCE_TO_UPDATE_ROUTE = 1.0  # meters

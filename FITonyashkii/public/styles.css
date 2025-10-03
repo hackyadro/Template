@@ -1,0 +1,302 @@
+body {
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+  background-color: #2c3e50;
+  overflow: hidden;
+  touch-action: none;
+}
+
+.container {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh; 
+}
+
+#mapCanvas {
+  display: block;
+  background-color: #34495e;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.upload-container {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.notification {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #27ae60;
+    color: white;
+    padding: 10px 20px;
+    border-radius: 5px;
+    z-index: 10000;
+    font-family: Arial;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    animation: slideDown 0.3s ease-out;
+}
+
+.notification.error {
+    background: #e74c3c;
+}
+
+@keyframes slideDown {
+    from {
+        transform: translateX(-50%) translateY(-100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(-50%) translateY(0);
+        opacity: 1;
+    }
+}
+
+.status-panel {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  min-width: 200px;
+  max-width: calc(100vw - 20px);
+  background-color: rgba(44, 62, 80, 0.9);
+  border-radius: 8px;
+  padding: 15px;
+  color: white;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.status-panel.collapsed {
+  width: auto;
+  padding: 0;
+}
+
+.status-panel.collapsed .status-values,
+.status-panel.collapsed div:not(#connectionStatus) {
+  display: none;
+}
+
+.connection-status {
+  margin-bottom: 15px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-weight: bold;
+  text-align: center;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  min-width: 80px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.connection-status:hover {
+  opacity: 0.8;
+}
+
+.status-panel.collapsed .connection-status {
+  margin-bottom: 0;
+}
+
+.connected {
+  background-color: #27ae60;
+}
+
+.disconnected {
+  background-color: #e74c3c;
+}
+
+.status-values {
+  margin-top: 15px;
+}
+
+.status-item {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding: 5px 8px;
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  font-size: 14px;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.status-item .status-name {
+  flex: 0.8;
+  min-width: 0;
+}
+
+.status-item .status-value {
+  flex: 0.2;
+  min-width: 0;
+}
+
+.status-item .status-value {
+  margin-left: 10px;
+  text-align: right;
+}
+
+.status-name {
+  font-weight: bold;
+}
+
+.status-value {
+  color: #3498db;
+}
+
+.player-info {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  background-color: rgba(44, 62, 80, 0.9);
+  border-radius: 8px;
+  padding: 10px;
+  color: white;
+  font-size: 18px;
+  max-width: calc(100vw - 20px);
+  box-sizing: border-box;
+}
+
+.upload-container {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+#uploadButton {
+  background-color: #e67e22;
+  color: white;
+  border: none;
+  padding: 12px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  min-height: 44px;
+  min-width: 160px;
+  touch-action: manipulation;
+  transition: background-color 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+  box-sizing: border-box;
+}
+
+.route-button {
+  background: #3498db;
+  color: white;
+  border: none;
+  padding: 12px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  min-height: 44px;
+  min-width: 160px;
+  transition: background-color 0.3s;
+  font-family: Arial, sans-serif;
+  box-sizing: border-box;
+}
+
+.route-button:hover {
+  background: #2980b9;
+}
+
+.route-button.active {
+  background: #e74c3c;
+}
+
+.route-button.active:hover {
+  background: #c0392b;
+}
+
+.upload-button:hover {
+  background-color: #d35400;
+}
+
+.upload-button:active {
+  background-color: #ba4a00;
+}
+
+
+/* Mobile-specific styles */
+@media (max-width: 768px) {
+  .container {
+    height: 100vh;
+    height: 100dvh;
+  }
+
+  .status-panel {
+    min-width: 150px;
+    max-width: 70vw;
+    top: 5px;
+    right: 5px;
+    padding: 10px;
+    font-size: 14px;
+  }
+
+  .status-panel.collapsed {
+    min-width: auto;
+  }
+
+  .player-info {
+    font-size: 16px;
+    padding: 8px;
+    bottom: max(10px, env(safe-area-inset-bottom, 10px));
+    right: 5px;
+  }
+
+  .upload-container {
+    bottom: max(10px, env(safe-area-inset-bottom, 10px));
+    left: 5px;
+  }
+
+  .upload-button {
+    padding: 10px 14px;
+    font-size: 12px;
+  }
+
+  .status-item {
+    font-size: 12px;
+    margin-bottom: 6px;
+  }
+}
+
+@media (max-width: 480px) {
+  .status-panel {
+    max-width: 85vw;
+    min-width: 120px;
+  }
+
+  .status-item {
+    font-size: 11px;
+    padding: 4px 6px;
+  }
+
+  .player-info {
+    bottom: max(15px, calc(env(safe-area-inset-bottom, 15px) + 5px));
+    font-size: 14px;
+  }
+
+  .upload-container {
+    bottom: max(15px, calc(env(safe-area-inset-bottom, 15px) + 5px));
+  }
+
+  .upload-button {
+    font-size: 11px;
+    padding: 8px 12px;
+  }
+}
+
+/* Support for iOS Safari bottom bar */
+@supports (height: 100dvh) {
+  .container {
+    height: 100dvh;
+  }
+}
