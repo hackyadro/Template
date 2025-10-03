@@ -1,0 +1,103 @@
+version: '3.8'
+
+services:
+  # FastAPI Backend
+  fastapi-backend:
+    build: .
+    container_name: nobrainlowenergy-api
+    ports:
+      - "8000:8000"
+    environment:
+      - MQTT_BROKER_HOST=mosquitto
+      - MQTT_BROKER_PORT=1883
+      - MQTT_BROKER_PORT_SAFE=8883
+      - MQTT_USE_TLS=false
+      - MQTT_CA_CERT_PATH=/app/certs/ca.crt
+      - MQTT_CERT_FILE_PATH=/app/certs/client.crt
+      - MQTT_KEY_FILE_PATH=/app/certs/client.key
+      - MQTT_CLIENT_ID=nobrainlowenergy-backend
+      - MQTT_USERNAME=your_mqtt_username
+      - FASTAPI_TLS_ON=false
+      - MQTT_AUTO_SUBSCRIBE_TOPICS=devices/+/beacons
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=${INFLUXDB_TOKEN:-admintoken}
+      - INFLUXDB_ORG=nobrain
+      - INFLUXDB_BUCKET=default
+      # HTTPS/WSS settings for FastAPI
+      - SSL_KEY_FILE=/app/certs/server.key
+      - SSL_CERT_FILE=/app/certs/server.crt
+    volumes:
+      - ./certs:/app/certs:ro
+      - ./logs:/app/logs
+    depends_on:
+      - mosquitto
+      - influxdb
+    restart: unless-stopped
+    networks:
+      - nobrainlowenergy
+
+  # Mosquitto MQTT Broker
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    container_name: nobrainlowenergy-mqtt
+    ports:
+      - "1883:1883" # Non-TLS port
+      - "8883:8883" # TLS port
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - ./certs:/mosquitto/certs
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_logs:/mosquitto/log
+    restart: unless-stopped
+    networks:
+      - nobrainlowenergy
+
+  # Redis (optional - for caching and session storage) мне кажется это лишнее
+  influxdb:
+    image: influxdb:latest
+    container_name: influxdb2
+    restart: always
+    ports:
+      - "8086:8086" # InfluxDB uses port 8086 by default
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=adminadmin
+      - DOCKER_INFLUXDB_INIT_ORG=nobrain
+      - DOCKER_INFLUXDB_INIT_BUCKET=default
+      - DOCKER_INFLUXDB_INIT_RETENTION=0
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=${INFLUXDB_TOKEN:-admintoken}
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+      - influxdb-config:/etc/influxdb2
+    networks:
+      - nobrainlowenergy
+
+  # PostgreSQL (optional - for persistent data storage) скорее что-то полегче будет лучше, типа мб sqlite??
+#  postgres:
+#    image: postgres:15-alpine
+#    container_name: nobrainlowenergy-db
+#    environment:
+#      - POSTGRES_DB=nobrainlowenergy
+#      - POSTGRES_USER=admin
+#      - POSTGRES_PASSWORD=your_secure_password
+#    ports:
+#      - "5432:5432"
+#    volumes:
+#      - postgres_data:/var/lib/postgresql/data
+#    restart: unless-stopped
+#    networks:
+#      - nobrainlowenergy
+
+volumes:
+  mosquitto_data:
+  mosquitto_logs:
+  redis_data:
+  postgres_data:
+  influxdb-data:
+  influxdb-config:
+
+
+networks:
+  nobrainlowenergy:
+    driver: bridge
