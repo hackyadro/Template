@@ -254,7 +254,13 @@ async def upload_beacon_config(request: Request, payload: Any = Body(...)):
 
     for idx, raw_beacon in enumerate(raw_positions, start=1):
         try:
-            beacon = BeaconPosition.parse_obj(raw_beacon)
+            # Manually map keys since the model expects aliases
+            beacon_data = {
+                "Name": raw_beacon.get("name"),
+                "X": raw_beacon.get("x"),
+                "Y": raw_beacon.get("y"),
+            }
+            beacon = BeaconPosition.parse_obj(beacon_data)
         except ValidationError as exc:
             skipped.append({"index": idx, "reason": exc.errors()})
             continue
