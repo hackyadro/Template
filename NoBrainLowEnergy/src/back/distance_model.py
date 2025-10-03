@@ -294,6 +294,103 @@ class Distance_model:
         return (float(solution[0]), float(solution[1]))
 
 
+class CorrectedDistanceModel(Distance_model):
+    def get_position_from_message(
+        self,
+        message: ReceivedMQTTMessage,
+        beacons: dict[str, tuple[float, float]],
+    ) -> tuple[float, float]:
+        distances = self.Calc(message)
+        return self.position_from_distances_corrected(distances, beacons)
+
+    def position_from_distances_corrected(
+        self,
+        distances: dict[str, list[float] | list[str]],
+        beacons: dict[str, tuple[float, float]],
+    ) -> tuple[float, float]:
+        if not isinstance(distances, dict):
+            return (float("nan"), float("nan"))
+
+        names = distances.get("names") or []
+        dist_values = distances.get("distances") or []
+
+        points = []
+        for name, dist in zip(names, dist_values):
+            if name in beacons and isinstance(dist, (int, float)) and math.isfinite(dist) and dist > 0:
+                points.append(beacons[name] + (dist,))
+
+        if len(points) < 3:
+            # Fallback to weighted centroid if not enough points for trilateration
+            if not points:
+                return (float("nan"), float("nan"))
+            
+            x_acc, y_acc, weight_sum = 0.0, 0.0, 0.0
+            for x, y, d in points:
+                weight = 1.0 / max(d, 1e-6)
+                x_acc += x * weight
+                y_acc += y * weight
+                weight_sum += weight
+            
+            if weight_sum == 0:
+                return (float("nan"), float("nan"))
+            
+            return (x_acc / weight_sum, y_acc / weight_sum)
+
+        points.sort(key=lambda p: p[2])
+        
+        # Take up to 4 nearest beacons for calculation
+        points = points[:4]
+
+        A = []
+        b = []
+        for i in range(len(points) - 1):
+            x_i, y_i, d_i = points[i]
+            x_n, y_n, d_n = points[-1]
+            
+            A.append([2 * (x_i - x_n), 2 * (y_i - y_n)])
+            b.append(d_n**2 - d_i**2 - (x_n**2 - x_i**2) - (y_n**2 - y_i**2))
+
+        try:
+            if np:
+                A_np = np.array(A)
+                b_np = np.array(b)
+                # Use pseudo-inverse for a robust solution
+                pos, _, _, _ = np.linalg.lstsq(A_np, b_np, rcond=None)
+                x, y = pos[0], pos[1]
+            else:
+                # Manual least squares if numpy is not available
+                ata00 = ata01 = ata11 = 0.0
+                atb0 = atb1 = 0.0
+                for r, val_b in zip(A, b):
+                    ata00 += r[0] * r[0]
+                    ata01 += r[0] * r[1]
+                    ata11 += r[1] * r[1]
+                    atb0 += r[0] * val_b
+                    atb1 += r[1] * val_b
+                
+                det = ata00 * ata11 - ata01 * ata01
+                if abs(det) < 1e-9:
+                    # Fallback to weighted centroid if matrix is singular
+                    x_acc, y_acc, weight_sum = 0.0, 0.0, 0.0
+                    for x_p, y_p, d_p in points:
+                        weight = 1.0 / max(d_p, 1e-6)
+                        x_acc += x_p * weight
+                        y_acc += y_p * weight
+                        weight_sum += weight
+                    return (x_acc / weight_sum, y_acc / weight_sum) if weight_sum > 0 else (float("nan"), float("nan"))
+
+                inv_det = 1.0 / det
+                x = inv_det * (ata11 * atb0 - ata01 * atb1)
+                y = inv_det * (-ata01 * atb0 + ata00 * atb1)
+
+        except Exception:
+            return (float("nan"), float("nan"))
+
+        if not (math.isfinite(x) and math.isfinite(y)):
+            return (float("nan"), float("nan"))
+
+        return (x, y)
+
 class RobustDistanceModel(Distance_model):
     """Improved distance-to-position estimator with iterative, robust fitting."""
 
