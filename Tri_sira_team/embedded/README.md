@@ -86,12 +86,17 @@ TARGET_BEACONS = {
 ```bash
 mpremote connect /dev/ttyUSB0
 ```
-
+2. добавьте secrets.py и KalmanFilter.py esp.py на плату: 
+```bash
+mpremote connect /dev/ttyUSB0 cp secrets.py :
+mpremote connect /dev/ttyUSB0 cp KalmanFilter.py :
+mpremote connect /dev/ttyUSB0 cp esp.py :
+``` 
 2. Запустите скрипт:
     
 
 ```bash
-mpremote run thebest.py
+mpremote run esp.py
 ```
 
 ---
