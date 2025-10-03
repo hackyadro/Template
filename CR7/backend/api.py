@@ -27,5 +27,6 @@ def get_position():
 def get_beacons():
     return jsonify(BEACON_POSITIONS)
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=3277, debug=True)
+def run_api():
+    """Функция запуска API (для вызова из main.py)."""
+    app.run(host="0.0.0.0", port=3277, debug=False, use_reloader=False)

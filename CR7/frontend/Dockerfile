@@ -15,4 +15,4 @@ WORKDIR /app
 COPY --from=build /app ./
 
 EXPOSE 3000
-CMD ["npm", "run", "start"]
+CMD ["node", ".output/server/index.mjs"]

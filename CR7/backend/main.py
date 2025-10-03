@@ -1,10 +1,12 @@
 import time
+import threading
 from statistics import median
 from beacons import BEACON_POSITIONS
 from trilateration import RobustTrilateration
-from mqtt_handler import init_mqtt, get_smoothed_rssi, rssi_history, stop_mqtt
+from mqtt_handler import init_mqtt, get_smoothed_rssi, stop_mqtt
 from config import WINDOW_SEC
 import state
+import api
 
 def get_smoothed_rssi_from_handler():
     return get_smoothed_rssi()
@@ -39,7 +41,6 @@ def main_loop():
             if len(points) >= 3:
                 result = trilaterator.trilaterate_improved(points, rssi_values, dt=WINDOW_SEC)
 
-
                 # сохраняем последнюю позицию для API
                 try:
                     state.save_last_position(result)
@@ -66,4 +67,9 @@ def main_loop():
         print("MQTT остановлен.")
 
 if __name__ == "__main__":
+    # Запускаем API в отдельном потоке
+    api_thread = threading.Thread(target=api.run_api, daemon=True)
+    api_thread.start()
+
+    # Запускаем основной цикл
     main_loop()

@@ -88,6 +88,7 @@ onMounted(() => {
 
 <template lang="pug">
 div.container
+  pre {{ position }}
   h1 Indoor Map
   button(@click="toggleRecording") {{ recording ? "Завершить путь" : "Начать путь" }}
   Map(:position="position" :beacons="beacons" :path="path")

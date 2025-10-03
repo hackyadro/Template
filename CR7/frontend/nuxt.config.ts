@@ -24,7 +24,7 @@ export default defineNuxtConfig({
 
   proxy: {
     options: {
-      target: "http://localhost:3277", // твой Flask API
+      target: "http://backend:3277", // твой Flask API
       changeOrigin: true,
       pathFilter: [
         "/api",
