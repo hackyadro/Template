@@ -28,7 +28,7 @@ class Distance_model:
     def get_position_from_message(self, message: ReceivedMQTTMessage, beacons: dict[str, tuple[float, float]]) -> tuple[float, float]:
         """Estimate position directly from an incoming MQTT message and known beacon positions."""
         distances = self.Calc(message)
-        return self.position_from_distances(distances, beacons)
+        return self.position_from_distances_numpy(distances, beacons)
 
 
     def Calc(self, message: ReceivedMQTTMessage) -> dict[str, list[float] | list[str]]:
