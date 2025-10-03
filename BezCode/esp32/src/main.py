@@ -4,8 +4,8 @@ from micropython import const
 from bletools import *
 from mynetwork import *
 from mymqtt import *
-# import aioble
 
+count: dict[str, int] = {}
 resout: dict[str, str] = {}
 publisher: Client = None
 stop = False
@@ -16,6 +16,7 @@ _ADV_TYPE_SHORT_NAME = const(0x08)
 _ADV_TYPE_COMPLETE_NAME = const(0x09)
 
 def bt_irq(event, data):
+    global count
     if event == _IRQ_SCAN_RESULT:
         addr_type, addr, adv_type, rssi, adv_data = data
         beacon_addr = bytes(addr).hex()
@@ -31,7 +32,13 @@ def bt_irq(event, data):
         if device_name == "Unknown" or "beacon" not in device_name:
             return
         
-        resout[device_name] = rssi
+        if (resout.get(device_name) == None):
+            resout[device_name] = rssi
+            count[device_name] = 1
+        else:
+            resout[device_name] += rssi
+            count[device_name] += 1
+
     
 if __name__ == "__main__":
     wifissid = "vivo X200 Pro"
@@ -46,15 +53,11 @@ if __name__ == "__main__":
 
     print("Connecting to MQTT broker...")
     try:
-        publisher = Client("ESP32_RSSI", "192.168.186.8", 1883)
+        publisher = Client("ESP32_RSSI", "192.168.186.78", 1883)
     except:
         print("Can't connect to MQTT broker")
         exit(1)
     print("MQTT broker connected")
-
-    # async with aioble.scan(duration_ms=5000) as scanner:
-    #     async for result in scanner:
-    #         print(result, result.name(), result.rssi, result.services())
 
     ble = bluetooth.BLE()
     ble.active(True)
@@ -66,10 +69,12 @@ if __name__ == "__main__":
     try:
         while True:
             time.sleep(0.1)
-            if len(resout) >= 4: 
+            if len(resout) >= 4 and sum(count.values()) >= 15:
+                resout = dict(map(lambda x: (x[0], x[1]/count[x[0]]), resout.items()))
                 print(resout)
                 publisher.send_data("ble/beacons/raw", resout)
-            resout.clear()
+                resout.clear()
+                count.clear()
     except KeyboardInterrupt:
         print("Scan stopped by user")
         ble.gap_scan(None)

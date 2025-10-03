@@ -2,7 +2,9 @@ import paho.mqtt.client as mqtt
 import json
 import time
 import os
+import csv
 from utils.trilateration import Trilateration
+from utils.polygon import simple_convex_hull
 
 class PositioningEngine:
     def __init__(self):
@@ -13,6 +15,9 @@ class PositioningEngine:
         self._smoothing_alpha = 0.3
         
         self.beacon_positions = self.load_beacon_positions()
+        self.positioning_area = simple_convex_hull(
+            tuple(map(lambda b: (b['x'], b['y']), self.beacon_positions.values()))
+        )
         print(f"✅ Positioning Engine initialized with {len(self.beacon_positions)} beacon positions")
         print(f"📋 Available beacons: {list(self.beacon_positions.keys())}")
     
@@ -27,25 +32,15 @@ class PositioningEngine:
             if os.path.exists(beacons_file) and os.path.isfile(beacons_file):
                 print("✅ Beacon file found and is a file (not directory)")
                 
-                with open(beacons_file, 'r') as f:
-                    lines = f.readlines()
-                    print(f"📄 Read {len(lines)} lines from file")
-                    
-                    for i, line in enumerate(lines):
-                        line = line.strip()
-                        if i == 0:  # Заголовок
-                            print(f"📋 Header: {line}")
-                            continue
-                            
-                        if line and ';' in line:
-                            parts = line.split(';')
-                            if len(parts) == 3:
-                                name, x, y = parts
-                                beacon_positions[name.strip()] = {
-                                    'x': float(x.strip()),
-                                    'y': float(y.strip())
-                                }
-                                print(f"📌 Loaded beacon: {name} -> ({x}, {y})")
+                with open(beacons_file, "r", newline='') as f:
+                    reader = csv.DictReader(f, delimiter=';')
+                    for row in reader:
+                        name, x, y = row["Name"].strip(), row["X"].strip(), row["Y"].strip()
+                        beacon_positions[name] = {
+                            'x': float(x),
+                            'y': float(y)
+                        }
+                        print(f"📌 Loaded beacon: {name} -> ({x}, {y})")
 
         except Exception as e:
             print(f"❌ Error loading beacon positions: {e}")
