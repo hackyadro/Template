@@ -16,8 +16,6 @@ AP_PASSWORD = "setup123"
 AP_CHANNEL = 6
 CONNECT_TIMEOUT_SEC = 20
 
-ble = None
-
 # --- file utils unchanged ---
 def load_config():
     try:
@@ -449,11 +447,7 @@ def start_config_portal(existing_config=None):
 
 # --- main unchanged except we call portal ---
 def main():
-    global ble
     config = load_config()
-    ble = bluetooth.BLE()
-    ble.active(True)
-    print("BLE active:", ble.active())
 
     if config and connect_to_wifi(config.get("wifi")):
         print("Boot configuration succeeded. Broker details available for publisher.")
@@ -463,5 +457,5 @@ def main():
     start_config_portal(config)
 
 
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()

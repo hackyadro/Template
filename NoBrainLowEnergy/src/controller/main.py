@@ -2,6 +2,7 @@ import utime  # type: ignore
 import network  # type: ignore
 import ubinascii  # type: ignore
 import machine  # type: ignore
+import bluetooth # type: ignore
 from micropython import const  # type: ignore
 
 try:
@@ -10,6 +11,8 @@ except ImportError:  # pragma: no cover - fallback for standard json
     import json  # type: ignore
 
 from umqtt.simple import MQTTClient  # type: ignore
+
+ble = None
 
 _IRQ_SCAN_RESULT = const(5)  # or const(4) / const( _IRQ_SCAN_RESULT ) depending on version
 _IRQ_SCAN_DONE = const(6)
@@ -624,7 +627,8 @@ def bt_irq(event, data):
 
 def scan_loop(frequency, publisher=None):
     global scan_active
-
+    global ble
+    
     ble.irq(bt_irq) # type: ignore
 
     scan_period_ms = max(get_scan_period_ms(frequency), 20)
@@ -694,6 +698,10 @@ def print_beacon_summary():
 
 def main():
     print("Starting BLE beacon scanner with configurable frequency")
+    global ble
+    ble = bluetooth.BLE()
+    ble.active(True)
+    print("BLE active:", ble.active())
 
     mqtt_config = load_mqtt_config()
     publisher = None
