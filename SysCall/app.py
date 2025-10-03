@@ -42,7 +42,7 @@ tx_power = st.sidebar.slider("A (Tx Power)", -100.0, -20.0, -56.0, 0.5)
 n_path_loss = st.sidebar.slider("n (Path Loss Exponent)", 1.0, 5.0, 2.4, 0.1)
 
 st.sidebar.markdown("### Шаг 2: Фильтры RSSI")
-median_window = st.sidebar.slider("Окно медианного фильтра", 3, 70, 12, 1)
+median_window = st.sidebar.slider("Окно медианного фильтра", 3, 70, 9, 1)
 kalman_R_rssi = st.sidebar.slider("RSSI - Шум измерения (R)", 0.01, 1.0, 0.8, 0.01)
 kalman_Q_rssi = st.sidebar.slider("RSSI - Шум процесса (Q)", 0.0001, 0.1, 0.005, 0.0001)
 
