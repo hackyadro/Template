@@ -49,7 +49,7 @@ esptool.py --port /dev/ttyUSB0 --baud 460800 write_flash 0x1000 esp32-xxxx.bin
 
 Шаг 6: Загрузка скрипта main.py
 -----
-Перед загрузкой main.py необходимо задать параметры соответствующие вашим данным
+Перед загрузкой main.py необходимо задать параметры соответствующие вашим данным. Так же необходимо скачать библиотеку https://github.com/micropython/micropython-lib/blob/master/micropython/umqtt.simple/umqtt/simple.py. Перекинуть этот файл директорию lib сохранив название
 
 Сеть необходима WPA3 - personal
 ~~~
