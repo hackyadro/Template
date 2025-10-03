@@ -3,7 +3,7 @@
   - Linux:  
     ```bash
     sudo apt update
-    sudo apt install docker.io docker-compose -y
+    sudo apt install docker docker-compose -y
     sudo systemctl enable --now docker
     ```
 
