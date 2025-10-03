@@ -6,7 +6,7 @@ import urequests as requests
 import ubinascii
 import ubluetooth
 
-SSID = "iPhone (Владимир)"
+SSID = "HotDot"
 PASSWORD = "12345678"
 
 map_name = None
@@ -16,11 +16,11 @@ write_road = None
 MAC_ADDRESS = None
 JSON_PARSE_ERROR = "JSON parse error:"
 
-HOST_ADDRESS = "http://172.20.10.2:8000"
+HOST_ADDRESS = "http://10.145.244.78:8000"
 
 # BLE scanning and reporting config
 SCAN_TIME = 0.05  # seconds per scan burst
-POLL_FREQUENCY_HZ = 1  # fixed BLE scan rate
+POLL_FREQUENCY_HZ = 5  # fixed BLE scan rate
 
 # Names of beacons we accept from BLE advertisements
 BEACONS = {
@@ -317,8 +317,9 @@ def ping_server():
 
 def send_signal_with_list(beacon_list):
     url_post = HOST_ADDRESS + "/send_signal"
-    payload = {"mac": MAC_ADDRESS, "map_name": map_name, "list": beacon_list}
+    payload = {"mac": MAC_ADDRESS, "map": map_name, "list": beacon_list}
     status, body = do_post(url_post, json_dict=payload)
+    # print("!!!! ", status, body)
 
 def current_report_period():
     """Compute report period from global freq with bounds [0.1, 10] Hz."""

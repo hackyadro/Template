@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 
-const HOST_ADDRESS = "172.20.10.2:8000"
+const HOST_ADDRESS = "10.145.244.78:8000"
 
 // Типы
 interface Beacon {
@@ -25,7 +25,6 @@ interface PathPoint {
 
 interface Device {
   id: string;
-  name: string;
   mac: string;
   color: string;
   pollFrequency: number; // Hz
@@ -70,14 +69,12 @@ const applyAllDevice = (data: any) => {
     if (!mac) continue;
     const existing = devices.value.find(x => x.mac === mac);
     if (existing) {
-      existing.name = d.name ?? existing.name;
       existing.pollFrequency = d.freq ?? existing.pollFrequency;
       existing.mapId = d.map_set;
       existing.isPolling = d.write_road ?? false;
     } else {
       devices.value.push({
         id: Date.now().toString() + '_' + mac,
-        name: d.name ?? mac,
         mac,
         color: getNextColor(),
         pollFrequency: d.freq ?? 1,
@@ -119,6 +116,15 @@ const handleWsMessage = (msg: InMsg) => {
     handlePositionUpdate(msg.data);
     return;
   }
+  if (msg.type === 'last_road') {
+    // Временный вывод ответа о последнем маршруте в консоль
+    const d = msg.data || {};
+    const mac = d?.mac;
+    const roadId = d?.road_id;
+    const cords = Array.isArray(d?.cords) ? d.cords : [];
+    console.log('[last_road]', { mac, road_id: roadId, pointsCount: cords.length, cords });
+    return;
+  }
   console.warn('Unhandled WS type:', msg.type, msg.data);
 };
 
@@ -150,21 +156,11 @@ const handlePositionUpdate = (data: any) => {
   }
 };
 
-// helper to send current map's paths to server (optional)
-const sendWriteRoad = () => {
-  const points: { x: number; y: number }[] = [];
-  for (const d of devicesOnSelectedMap.value) {
-    for (const p of d.path) points.push({ x: p.x, y: p.y });
-  }
-  sendWs({ type: 'write_road', data: { points } });
-};
 
 // Вычисляемые свойства
 const selectedMap = computed((): Map | undefined => 
   maps.value.find((m: Map) => m.id === selectedMapId.value)
 );
-// Вспомогательные вычисления
-const pollIntervalMsFor = (freq: number) => 1000 / Math.max(freq, 0.0001);
 
 // Вычисляемые коллекции для шаблона
 const devicesOnSelectedMap = computed((): Device[] =>
@@ -314,6 +310,12 @@ const clearDevicePath = (deviceId: string) => {
   const d = devices.value.find(x => x.id === deviceId);
   if (!d) return;
   d.path = [];
+};
+
+// Запросить с сервера последнее измерение (маршрут) для устройства
+const downloadLastRoad = (device: Device) => {
+  if (!device?.mac) return;
+  sendWs({ type: 'download_last_road', data: { mac: device.mac } });
 };
 
 // Отправляем на сервер изменение карты устройства
@@ -513,6 +515,7 @@ const handleDeviceFreqCommit = (device: Device) => {
                   <button class="btn btn-success" @click="startDevicePolling(d.id)" :disabled="d.isPolling || !d.mapId">▶️ Старт</button>
                   <button class="btn btn-danger" @click="stopDevicePolling(d.id)" :disabled="!d.isPolling">⏸️ Стоп</button>
                   <button class="btn btn-secondary" @click="clearDevicePath(d.id)" :disabled="d.path.length === 0">🗑️ Очистить</button>
+                  <button class="btn btn-primary" @click="downloadLastRoad(d)">⬇️ Скачать последнее</button>
                 </div>
               </div>
             </div>
@@ -602,7 +605,7 @@ const handleDeviceFreqCommit = (device: Device) => {
                       font-weight="bold" 
                       :fill="d.color"
                     >
-                      {{ d.name }}
+                      {{ d.mac }}
                     </text>
                   </g>
                 </template>
@@ -644,7 +647,7 @@ const handleDeviceFreqCommit = (device: Device) => {
                   <td>{{ index + 1 }}</td>
                   <td>
                     <span class="color-dot" :style="{ background: row.device.color, marginRight: '6px' }"></span>
-                    {{ row.device.name }} ({{ row.device.mac }})
+                    {{ row.device.mac }}
                   </td>
                   <td>{{ row.point.x.toFixed(2) }}</td>
                   <td>{{ row.point.y.toFixed(2) }}</td>

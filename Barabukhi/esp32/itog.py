@@ -5,7 +5,7 @@ import ujson
 import urequests as requests
 import ubinascii
 
-SSID = "iPhone (Владимир)"
+SSID = "HotDot"
 PASSWORD = "12345678"
 
 BEACONSDATA = [
@@ -439,7 +439,7 @@ write_road = None
 MAC_ADDRESS = None
 JSON_PARSE_ERROR = "JSON parse error:"
 
-HOST_ADDRESS = "http://172.20.10.2:8000"
+HOST_ADDRESS = "http://10.145.244.78:8000"
 
 def wifi_connect(ssid, pwd):
     wifi = network.WLAN(network.STA_IF)
