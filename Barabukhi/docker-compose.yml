@@ -1,0 +1,55 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: indoor_navigation_db
+    environment:
+      POSTGRES_USER: indoor_user
+      POSTGRES_PASSWORD: indoor_pass
+      POSTGRES_DB: indoor_navigation
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/migrations:/docker-entrypoint-initdb.d  # миграций при первом запуске
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U indoor_user -d indoor_navigation"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - indoor_network
+    restart: unless-stopped
+
+  # Python FastAPI Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: indoor_navigation_backend
+    environment:
+      DATABASE_URL: postgresql+asyncpg://indoor_user:indoor_pass@postgres:5432/indoor_navigation
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/migrations:/app/migrations
+    networks:
+      - indoor_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  indoor_network:
+    driver: bridge
