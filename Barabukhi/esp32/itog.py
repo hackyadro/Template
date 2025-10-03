@@ -5,58 +5,430 @@ import ujson
 import urequests as requests
 import ubinascii
 
-SSID = "Xiaomi_1360"
-PASSWORD = "qwasd3rf"
+SSID = "iPhone (Владимир)"
+PASSWORD = "12345678"
 
 BEACONSDATA = [
-  [{"name": "beacon_1", "signal": -63.3}, {"name": "beacon_2", "signal": -57.9}, {"name": "beacon_3", "signal": -66.8}, {"name": "beacon_4", "signal": -76.2}, {"name": "beacon_5", "signal": -76.8}, {"name": "beacon_6", "signal": -78.0}, {"name": "beacon_7", "signal": -93.5}],
-  [{"name": "beacon_1", "signal": -61.0}, {"name": "beacon_2", "signal": -47.0}, {"name": "beacon_3", "signal": -73.0}, {"name": "beacon_4", "signal": -81.6}, {"name": "beacon_5", "signal": -73.0}, {"name": "beacon_6", "signal": -82.2}, {"name": "beacon_7", "signal": -95.5}],
-  [{"name": "beacon_1", "signal": -62.1}, {"name": "beacon_2", "signal": -47.7}, {"name": "beacon_3", "signal": -61.5}, {"name": "beacon_4", "signal": -77.6}, {"name": "beacon_5", "signal": -66.9}, {"name": "beacon_6", "signal": -76.0}, {"name": "beacon_7", "signal": -94.5}],
-  [{"name": "beacon_1", "signal": -54.0}, {"name": "beacon_2", "signal": -45.3}, {"name": "beacon_3", "signal": -66.2}, {"name": "beacon_4", "signal": -76.5}, {"name": "beacon_5", "signal": -68.8}, {"name": "beacon_6", "signal": -77.0}, {"name": "beacon_7", "signal": -95.0}],
-  [{"name": "beacon_1", "signal": -53.8}, {"name": "beacon_2", "signal": -46.0}, {"name": "beacon_3", "signal": -67.0}, {"name": "beacon_4", "signal": -80.0}, {"name": "beacon_5", "signal": -71.0}, {"name": "beacon_6", "signal": -79.6}, {"name": "beacon_7", "signal": -93.7}],
-  [{"name": "beacon_1", "signal": -61.0}, {"name": "beacon_2", "signal": -53.8}, {"name": "beacon_3", "signal": -65.0}, {"name": "beacon_4", "signal": -78.8}, {"name": "beacon_5", "signal": -70.0}, {"name": "beacon_6", "signal": -74.2}, {"name": "beacon_7", "signal": -92.0}],
-  [{"name": "beacon_1", "signal": -67.0}, {"name": "beacon_2", "signal": -58.0}, {"name": "beacon_3", "signal": -60.5}, {"name": "beacon_4", "signal": -70.7}, {"name": "beacon_5", "signal": -79.0}, {"name": "beacon_6", "signal": -74.3}, {"name": "beacon_7", "signal": -93.0}],
-  [{"name": "beacon_1", "signal": -73.2}, {"name": "beacon_2", "signal": -69.7}, {"name": "beacon_3", "signal": -57.0}, {"name": "beacon_4", "signal": -72.7}, {"name": "beacon_5", "signal": -75.4}, {"name": "beacon_6", "signal": -73.5}, {"name": "beacon_7", "signal": -93.0}],
-  [{"name": "beacon_1", "signal": -70.5}, {"name": "beacon_2", "signal": -59.8}, {"name": "beacon_3", "signal": -55.2}, {"name": "beacon_4", "signal": -68.5}, {"name": "beacon_5", "signal": -67.8}, {"name": "beacon_6", "signal": -74.7}, {"name": "beacon_7", "signal": -89.0}],
-  [{"name": "beacon_1", "signal": -77.2}, {"name": "beacon_2", "signal": -71.6}, {"name": "beacon_3", "signal": -49.0}, {"name": "beacon_4", "signal": -72.8}, {"name": "beacon_5", "signal": -66.4}, {"name": "beacon_6", "signal": -71.8}, {"name": "beacon_7", "signal": -91.0}],
-  [{"name": "beacon_1", "signal": -77.2}, {"name": "beacon_2", "signal": -72.6}, {"name": "beacon_3", "signal": -48.6}, {"name": "beacon_4", "signal": -72.5}, {"name": "beacon_5", "signal": -62.7}, {"name": "beacon_6", "signal": -73.9}, {"name": "beacon_7", "signal": -90.1}],
-  [{"name": "beacon_1", "signal": -70.0}, {"name": "beacon_2", "signal": -73.0}, {"name": "beacon_3", "signal": -48.3}, {"name": "beacon_4", "signal": -69.0}, {"name": "beacon_5", "signal": -63.8}, {"name": "beacon_6", "signal": -78.7}, {"name": "beacon_7", "signal": -87.3}],
-  [{"name": "beacon_1", "signal": -76.8}, {"name": "beacon_2", "signal": -73.8}, {"name": "beacon_3", "signal": -50.4}, {"name": "beacon_4", "signal": -73.8}, {"name": "beacon_5", "signal": -66.8}, {"name": "beacon_6", "signal": -73.3}, {"name": "beacon_7", "signal": -85.2}],
-  [{"name": "beacon_1", "signal": -77.4}, {"name": "beacon_2", "signal": -76.2}, {"name": "beacon_3", "signal": -56.0}, {"name": "beacon_4", "signal": -70.0}, {"name": "beacon_5", "signal": -74.0}, {"name": "beacon_6", "signal": -81.0}, {"name": "beacon_7", "signal": -88.3}],
-  [{"name": "beacon_1", "signal": -76.9}, {"name": "beacon_2", "signal": -74.0}, {"name": "beacon_3", "signal": -60.8}, {"name": "beacon_4", "signal": -67.1}, {"name": "beacon_5", "signal": -60.0}, {"name": "beacon_6", "signal": -75.7}, {"name": "beacon_7", "signal": -91.5}],
-  [{"name": "beacon_1", "signal": -79.2}, {"name": "beacon_2", "signal": -70.3}, {"name": "beacon_3", "signal": -59.7}, {"name": "beacon_4", "signal": -64.3}, {"name": "beacon_5", "signal": -65.3}, {"name": "beacon_6", "signal": -67.8}, {"name": "beacon_7", "signal": -82.5}],
-  [{"name": "beacon_1", "signal": -82.3}, {"name": "beacon_2", "signal": -82.3}, {"name": "beacon_3", "signal": -67.0}, {"name": "beacon_4", "signal": -64.0}, {"name": "beacon_5", "signal": -69.2}, {"name": "beacon_6", "signal": -71.2}, {"name": "beacon_7", "signal": -88.5}],
-  [{"name": "beacon_1", "signal": -78.0}, {"name": "beacon_2", "signal": -86.0}, {"name": "beacon_3", "signal": -71.5}, {"name": "beacon_4", "signal": -59.0}, {"name": "beacon_5", "signal": -55.0}, {"name": "beacon_6", "signal": -71.8}, {"name": "beacon_7", "signal": -88.2}],
-  [{"name": "beacon_1", "signal": -83.0}, {"name": "beacon_2", "signal": -81.4}, {"name": "beacon_3", "signal": -69.3}, {"name": "beacon_4", "signal": -60.7}, {"name": "beacon_5", "signal": -54.3}, {"name": "beacon_6", "signal": -64.3}, {"name": "beacon_7", "signal": -82.3}],
-  [{"name": "beacon_1", "signal": -83.2}, {"name": "beacon_2", "signal": -83.0}, {"name": "beacon_3", "signal": -76.0}, {"name": "beacon_4", "signal": -65.4}, {"name": "beacon_5", "signal": -65.0}, {"name": "beacon_6", "signal": -70.5}, {"name": "beacon_7", "signal": -88.2}],
-  [{"name": "beacon_1", "signal": -86.0}, {"name": "beacon_2", "signal": -83.3}, {"name": "beacon_3", "signal": -74.1}, {"name": "beacon_4", "signal": -72.4}, {"name": "beacon_5", "signal": -58.0}, {"name": "beacon_6", "signal": -63.2}, {"name": "beacon_7", "signal": -83.5}],
-  [{"name": "beacon_1", "signal": -84.8}, {"name": "beacon_2", "signal": -80.7}, {"name": "beacon_3", "signal": -72.5}, {"name": "beacon_4", "signal": -74.0}, {"name": "beacon_5", "signal": -53.5}, {"name": "beacon_6", "signal": -61.0}, {"name": "beacon_7", "signal": -83.3}],
-  [{"name": "beacon_1", "signal": -86.6}, {"name": "beacon_2", "signal": -83.4}, {"name": "beacon_3", "signal": -72.2}, {"name": "beacon_4", "signal": -75.0}, {"name": "beacon_5", "signal": -46.0}, {"name": "beacon_6", "signal": -57.8}, {"name": "beacon_7", "signal": -80.2}],
-  [{"name": "beacon_1", "signal": -85.0}, {"name": "beacon_2", "signal": -89.5}, {"name": "beacon_3", "signal": -71.0}, {"name": "beacon_4", "signal": -79.0}, {"name": "beacon_5", "signal": -44.2}, {"name": "beacon_6", "signal": -59.0}, {"name": "beacon_7", "signal": -81.0}],
-  [{"name": "beacon_1", "signal": -82.6}, {"name": "beacon_2", "signal": -84.3}, {"name": "beacon_3", "signal": -69.2}, {"name": "beacon_4", "signal": -74.7}, {"name": "beacon_5", "signal": -60.7}, {"name": "beacon_6", "signal": -62.0}, {"name": "beacon_7", "signal": -83.0}],
-  [{"name": "beacon_1", "signal": -73.0}, {"name": "beacon_2", "signal": -79.0}, {"name": "beacon_3", "signal": -64.0}, {"name": "beacon_4", "signal": -75.5}, {"name": "beacon_5", "signal": -51.0}, {"name": "beacon_6", "signal": -80.0}, {"name": "beacon_7", "signal": -82.3}],
-  [{"name": "beacon_1", "signal": -75.0}, {"name": "beacon_2", "signal": -81.3}, {"name": "beacon_3", "signal": -62.2}, {"name": "beacon_4", "signal": -78.0}, {"name": "beacon_5", "signal": -62.3}, {"name": "beacon_6", "signal": -58.6}, {"name": "beacon_7", "signal": -79.4}],
-  [{"name": "beacon_1", "signal": -77.0}, {"name": "beacon_2", "signal": -88.6}, {"name": "beacon_3", "signal": -64.5}, {"name": "beacon_4", "signal": -75.5}, {"name": "beacon_5", "signal": -55.8}, {"name": "beacon_6", "signal": -53.8}, {"name": "beacon_7", "signal": -76.2}],
-  [{"name": "beacon_1", "signal": -82.4}, {"name": "beacon_2", "signal": -82.8}, {"name": "beacon_3", "signal": -73.0}, {"name": "beacon_4", "signal": -80.3}, {"name": "beacon_5", "signal": -52.3}, {"name": "beacon_6", "signal": -57.3}, {"name": "beacon_7", "signal": -75.3}],
-  [{"name": "beacon_1", "signal": -82.7}, {"name": "beacon_2", "signal": -77.8}, {"name": "beacon_3", "signal": -69.0}, {"name": "beacon_4", "signal": -76.8}, {"name": "beacon_5", "signal": -55.3}, {"name": "beacon_6", "signal": -52.2}, {"name": "beacon_7", "signal": -74.8}],
-  [{"name": "beacon_1", "signal": -84.2}, {"name": "beacon_2", "signal": -83.6}, {"name": "beacon_3", "signal": -75.4}, {"name": "beacon_4", "signal": -80.2}, {"name": "beacon_5", "signal": -57.7}, {"name": "beacon_6", "signal": -58.8}, {"name": "beacon_7", "signal": -75.2}],
-  [{"name": "beacon_1", "signal": -85.0}, {"name": "beacon_2", "signal": -82.7}, {"name": "beacon_3", "signal": -68.2}, {"name": "beacon_4", "signal": -84.8}, {"name": "beacon_5", "signal": -64.5}, {"name": "beacon_6", "signal": -58.8}, {"name": "beacon_7", "signal": -64.5}],
-  [{"name": "beacon_1", "signal": -81.0}, {"name": "beacon_2", "signal": -79.7}, {"name": "beacon_3", "signal": -72.3}, {"name": "beacon_4", "signal": -80.0}, {"name": "beacon_5", "signal": -60.5}, {"name": "beacon_6", "signal": -52.8}, {"name": "beacon_7", "signal": -56.0}],
-  [{"name": "beacon_1", "signal": -88.3}, {"name": "beacon_2", "signal": -86.0}, {"name": "beacon_3", "signal": -81.3}, {"name": "beacon_4", "signal": -85.3}, {"name": "beacon_5", "signal": -57.8}, {"name": "beacon_6", "signal": -48.0}, {"name": "beacon_7", "signal": -62.8}],
-  [{"name": "beacon_1", "signal": -92.0}, {"name": "beacon_2", "signal": -92.2}, {"name": "beacon_3", "signal": -80.5}, {"name": "beacon_4", "signal": -85.0}, {"name": "beacon_5", "signal": -70.3}, {"name": "beacon_6", "signal": -44.7}, {"name": "beacon_7", "signal": -58.7}],
-  [{"name": "beacon_1", "signal": -90.8}, {"name": "beacon_2", "signal": -95.0}, {"name": "beacon_3", "signal": -80.0}, {"name": "beacon_4", "signal": -87.6}, {"name": "beacon_5", "signal": -72.6}, {"name": "beacon_6", "signal": -44.0}, {"name": "beacon_7", "signal": -62.0}],
-  [{"name": "beacon_1", "signal": -95.5}, {"name": "beacon_2", "signal": -94.0}, {"name": "beacon_3", "signal": -87.8}, {"name": "beacon_4", "signal": -92.7}, {"name": "beacon_5", "signal": -70.9}, {"name": "beacon_6", "signal": -46.0}, {"name": "beacon_7", "signal": -59.3}],
-  [{"name": "beacon_1", "signal": -96.0}, {"name": "beacon_2", "signal": -97.0}, {"name": "beacon_3", "signal": -84.3}, {"name": "beacon_4", "signal": -90.8}, {"name": "beacon_5", "signal": -81.2}, {"name": "beacon_6", "signal": -55.8}, {"name": "beacon_7", "signal": -58.2}],
-  [{"name": "beacon_1", "signal": -99.5}, {"name": "beacon_2", "signal": -95.0}, {"name": "beacon_3", "signal": -90.3}, {"name": "beacon_4", "signal": -96.3}, {"name": "beacon_5", "signal": -79.4}, {"name": "beacon_6", "signal": -53.6}, {"name": "beacon_7", "signal": -49.0}],
-  [{"name": "beacon_3", "signal": -90.0}, {"name": "beacon_4", "signal": -93.7}, {"name": "beacon_5", "signal": -81.2}, {"name": "beacon_6", "signal": -54.4}, {"name": "beacon_7", "signal": -46.4}],
-  [{"name": "beacon_3", "signal": -92.3}, {"name": "beacon_5", "signal": -84.7}, {"name": "beacon_6", "signal": -60.1}, {"name": "beacon_7", "signal": -46.3}],
-  [{"name": "beacon_3", "signal": -93.3}, {"name": "beacon_5", "signal": -83.8}, {"name": "beacon_6", "signal": -63.2}, {"name": "beacon_7", "signal": -35.6}],
-  [{"name": "beacon_3", "signal": -91.8}, {"name": "beacon_4", "signal": -98.0}, {"name": "beacon_5", "signal": -82.3}, {"name": "beacon_6", "signal": -66.7}, {"name": "beacon_7", "signal": -42.0}],
-  [{"name": "beacon_1", "signal": -100.0}, {"name": "beacon_3", "signal": -89.8}, {"name": "beacon_4", "signal": -97.0}, {"name": "beacon_5", "signal": -82.5}, {"name": "beacon_6", "signal": -60.6}, {"name": "beacon_7", "signal": -47.2}],
-  [{"name": "beacon_2", "signal": -96.0}, {"name": "beacon_3", "signal": -91.2}, {"name": "beacon_4", "signal": -93.0}, {"name": "beacon_5", "signal": -73.6}, {"name": "beacon_6", "signal": -57.2}, {"name": "beacon_7", "signal": -52.5}],
-  [{"name": "beacon_1", "signal": -95.5}, {"name": "beacon_2", "signal": -97.0}, {"name": "beacon_3", "signal": -88.0}, {"name": "beacon_4", "signal": -92.2}, {"name": "beacon_5", "signal": -75.6}, {"name": "beacon_6", "signal": -54.7}, {"name": "beacon_7", "signal": -57.9}],
-  [{"name": "beacon_1", "signal": -85.0}, {"name": "beacon_2", "signal": -91.0}, {"name": "beacon_3", "signal": -83.0}, {"name": "beacon_4", "signal": -84.0}, {"name": "beacon_5", "signal": -59.5}, {"name": "beacon_6", "signal": -51.0}, {"name": "beacon_7", "signal": -56.4}],
-  [{"name": "beacon_1", "signal": -84.8}, {"name": "beacon_2", "signal": -84.0}, {"name": "beacon_3", "signal": -77.9}, {"name": "beacon_4", "signal": -85.5}, {"name": "beacon_5", "signal": -57.7}, {"name": "beacon_6", "signal": -48.2}, {"name": "beacon_7", "signal": -60.9}]
+  [
+    {"name": "beacon_1", "signal": -63.3, "samples": 3},
+    {"name": "beacon_2", "signal": -57.9, "samples": 7},
+    {"name": "beacon_3", "signal": -66.8, "samples": 6},
+    {"name": "beacon_4", "signal": -76.2, "samples": 6},
+    {"name": "beacon_5", "signal": -76.8, "samples": 5},
+    {"name": "beacon_6", "signal": -78.0, "samples": 5},
+    {"name": "beacon_7", "signal": -93.5, "samples": 2}
+  ],
+  [
+    {"name": "beacon_1", "signal": -61.0, "samples": 5},
+    {"name": "beacon_2", "signal": -47.0, "samples": 3},
+    {"name": "beacon_3", "signal": -73.0, "samples": 4},
+    {"name": "beacon_4", "signal": -81.6, "samples": 5},
+    {"name": "beacon_5", "signal": -73.0, "samples": 4},
+    {"name": "beacon_6", "signal": -82.2, "samples": 5},
+    {"name": "beacon_7", "signal": -95.5, "samples": 2}
+  ],
+  [
+    {"name": "beacon_1", "signal": -62.1, "samples": 7},
+    {"name": "beacon_2", "signal": -47.7, "samples": 7},
+    {"name": "beacon_3", "signal": -61.5, "samples": 4},
+    {"name": "beacon_4", "signal": -77.6, "samples": 7},
+    {"name": "beacon_5", "signal": -66.9, "samples": 7},
+    {"name": "beacon_6", "signal": -76.0, "samples": 5},
+    {"name": "beacon_7", "signal": -94.5, "samples": 2}
+  ],
+  [
+    {"name": "beacon_1", "signal": -54.0, "samples": 5},
+    {"name": "beacon_2", "signal": -45.3, "samples": 3},
+    {"name": "beacon_3", "signal": -66.2, "samples": 5},
+    {"name": "beacon_4", "signal": -76.5, "samples": 4},
+    {"name": "beacon_5", "signal": -68.8, "samples": 5},
+    {"name": "beacon_6", "signal": -77.0, "samples": 3},
+    {"name": "beacon_7", "signal": -95.0, "samples": 3}
+  ],
+  [
+    {"name": "beacon_1", "signal": -53.8, "samples": 5},
+    {"name": "beacon_2", "signal": -46.0, "samples": 4},
+    {"name": "beacon_3", "signal": -67.0, "samples": 4},
+    {"name": "beacon_4", "signal": -80.0, "samples": 6},
+    {"name": "beacon_5", "signal": -71.0, "samples": 7},
+    {"name": "beacon_6", "signal": -79.6, "samples": 5},
+    {"name": "beacon_7", "signal": -93.7, "samples": 3}
+  ],
+  [
+    {"name": "beacon_1", "signal": -61.0, "samples": 4},
+    {"name": "beacon_2", "signal": -53.8, "samples": 5},
+    {"name": "beacon_3", "signal": -65.0, "samples": 5},
+    {"name": "beacon_4", "signal": -78.8, "samples": 4},
+    {"name": "beacon_5", "signal": -70.0, "samples": 4},
+    {"name": "beacon_6", "signal": -74.2, "samples": 4},
+    {"name": "beacon_7", "signal": -92.0, "samples": 4}
+  ],
+  [
+    {"name": "beacon_1", "signal": -67.0, "samples": 6},
+    {"name": "beacon_2", "signal": -58.0, "samples": 6},
+    {"name": "beacon_3", "signal": -60.5, "samples": 6},
+    {"name": "beacon_4", "signal": -70.7, "samples": 3},
+    {"name": "beacon_5", "signal": -79.0, "samples": 5},
+    {"name": "beacon_6", "signal": -74.3, "samples": 6},
+    {"name": "beacon_7", "signal": -93.0, "samples": 2}
+  ],
+  [
+    {"name": "beacon_1", "signal": -73.2, "samples": 4},
+    {"name": "beacon_2", "signal": -69.7, "samples": 3},
+    {"name": "beacon_3", "signal": -57.0, "samples": 4},
+    {"name": "beacon_4", "signal": -72.7, "samples": 3},
+    {"name": "beacon_5", "signal": -75.4, "samples": 5},
+    {"name": "beacon_6", "signal": -73.5, "samples": 4},
+    {"name": "beacon_7", "signal": -93.0, "samples": 3}
+  ],
+  [
+    {"name": "beacon_1", "signal": -70.5, "samples": 6},
+    {"name": "beacon_2", "signal": -59.8, "samples": 6},
+    {"name": "beacon_3", "signal": -55.2, "samples": 6},
+    {"name": "beacon_4", "signal": -68.5, "samples": 4},
+    {"name": "beacon_5", "signal": -67.8, "samples": 6},
+    {"name": "beacon_6", "signal": -74.7, "samples": 6},
+    {"name": "beacon_7", "signal": -89.0, "samples": 2}
+  ],
+  [
+    {"name": "beacon_1", "signal": -77.2, "samples": 5},
+    {"name": "beacon_2", "signal": -71.6, "samples": 5},
+    {"name": "beacon_3", "signal": -49.0, "samples": 5},
+    {"name": "beacon_4", "signal": -72.8, "samples": 4},
+    {"name": "beacon_5", "signal": -66.4, "samples": 5},
+    {"name": "beacon_6", "signal": -71.8, "samples": 4},
+    {"name": "beacon_7", "signal": -91.0, "samples": 1}
+  ],
+  [
+    {"name": "beacon_1", "signal": -77.2, "samples": 5},
+    {"name": "beacon_2", "signal": -72.6, "samples": 5},
+    {"name": "beacon_3", "signal": -48.6, "samples": 5},
+    {"name": "beacon_4", "signal": -72.5, "samples": 6},
+    {"name": "beacon_5", "signal": -62.7, "samples": 3},
+    {"name": "beacon_6", "signal": -73.9, "samples": 7},
+    {"name": "beacon_7", "signal": -90.1, "samples": 7}
+  ],
+  [
+    {"name": "beacon_1", "signal": -70.0, "samples": 3},
+    {"name": "beacon_2", "signal": -73.0, "samples": 2},
+    {"name": "beacon_3", "signal": -48.3, "samples": 3},
+    {"name": "beacon_4", "signal": -69.0, "samples": 4},
+    {"name": "beacon_5", "signal": -63.8, "samples": 4},
+    {"name": "beacon_6", "signal": -78.7, "samples": 3},
+    {"name": "beacon_7", "signal": -87.3, "samples": 3}
+  ],
+  [
+    {"name": "beacon_1", "signal": -76.8, "samples": 6},
+    {"name": "beacon_2", "signal": -73.8, "samples": 4},
+    {"name": "beacon_3", "signal": -50.4, "samples": 7},
+    {"name": "beacon_4", "signal": -73.8, "samples": 5},
+    {"name": "beacon_5", "signal": -66.8, "samples": 6},
+    {"name": "beacon_6", "signal": -73.3, "samples": 6},
+    {"name": "beacon_7", "signal": -85.2, "samples": 6}
+  ],
+  [
+    {"name": "beacon_1", "signal": -77.4, "samples": 5},
+    {"name": "beacon_2", "signal": -76.2, "samples": 4},
+    {"name": "beacon_3", "signal": -56.0, "samples": 4},
+    {"name": "beacon_4", "signal": -70.0, "samples": 5},
+    {"name": "beacon_5", "signal": -74.0, "samples": 4},
+    {"name": "beacon_6", "signal": -81.0, "samples": 2},
+    {"name": "beacon_7", "signal": -88.3, "samples": 3}
+  ],
+  [
+    {"name": "beacon_1", "signal": -76.9, "samples": 7},
+    {"name": "beacon_2", "signal": -74.0, "samples": 7},
+    {"name": "beacon_3", "signal": -60.8, "samples": 6},
+    {"name": "beacon_4", "signal": -67.1, "samples": 7},
+    {"name": "beacon_5", "signal": -60.0, "samples": 7},
+    {"name": "beacon_6", "signal": -75.7, "samples": 3},
+    {"name": "beacon_7", "signal": -91.5, "samples": 2}
+  ],
+  [
+    {"name": "beacon_1", "signal": -79.2, "samples": 4},
+    {"name": "beacon_2", "signal": -70.3, "samples": 3},
+    {"name": "beacon_3", "signal": -59.7, "samples": 3},
+    {"name": "beacon_4", "signal": -64.3, "samples": 3},
+    {"name": "beacon_5", "signal": -65.3, "samples": 3},
+    {"name": "beacon_6", "signal": -67.8, "samples": 4},
+    {"name": "beacon_7", "signal": -82.5, "samples": 2}
+  ],
+  [
+    {"name": "beacon_1", "signal": -82.3, "samples": 6},
+    {"name": "beacon_2", "signal": -82.3, "samples": 7},
+    {"name": "beacon_3", "signal": -67.0, "samples": 6},
+    {"name": "beacon_4", "signal": -64.0, "samples": 5},
+    {"name": "beacon_5", "signal": -69.2, "samples": 4},
+    {"name": "beacon_6", "signal": -71.2, "samples": 5},
+    {"name": "beacon_7", "signal": -88.5, "samples": 6}
+  ],
+  [
+    {"name": "beacon_1", "signal": -78.0, "samples": 2},
+    {"name": "beacon_2", "signal": -86.0, "samples": 2},
+    {"name": "beacon_3", "signal": -71.5, "samples": 4},
+    {"name": "beacon_4", "signal": -59.0, "samples": 3},
+    {"name": "beacon_5", "signal": -55.0, "samples": 2},
+    {"name": "beacon_6", "signal": -71.8, "samples": 4},
+    {"name": "beacon_7", "signal": -88.2, "samples": 4}
+  ],
+  [
+    {"name": "beacon_1", "signal": -83.0, "samples": 4},
+    {"name": "beacon_2", "signal": -81.4, "samples": 5},
+    {"name": "beacon_3", "signal": -69.3, "samples": 6},
+    {"name": "beacon_4", "signal": -60.7, "samples": 6},
+    {"name": "beacon_5", "signal": -54.3, "samples": 6},
+    {"name": "beacon_6", "signal": -64.3, "samples": 6},
+    {"name": "beacon_7", "signal": -82.3, "samples": 6}
+  ],
+  [
+    {"name": "beacon_1", "signal": -83.2, "samples": 5},
+    {"name": "beacon_2", "signal": -83.0, "samples": 2},
+    {"name": "beacon_3", "signal": -76.0, "samples": 3},
+    {"name": "beacon_4", "signal": -65.4, "samples": 5},
+    {"name": "beacon_5", "signal": -65.0, "samples": 5},
+    {"name": "beacon_6", "signal": -70.5, "samples": 2},
+    {"name": "beacon_7", "signal": -88.2, "samples": 4}
+  ],
+  [
+    {"name": "beacon_1", "signal": -86.0, "samples": 7},
+    {"name": "beacon_2", "signal": -83.3, "samples": 6},
+    {"name": "beacon_3", "signal": -74.1, "samples": 7},
+    {"name": "beacon_4", "signal": -72.4, "samples": 7},
+    {"name": "beacon_5", "signal": -58.0, "samples": 7},
+    {"name": "beacon_6", "signal": -63.2, "samples": 5},
+    {"name": "beacon_7", "signal": -83.5, "samples": 4}
+  ],
+  [
+    {"name": "beacon_1", "signal": -84.8, "samples": 4},
+    {"name": "beacon_2", "signal": -80.7, "samples": 3},
+    {"name": "beacon_3", "signal": -72.5, "samples": 2},
+    {"name": "beacon_4", "signal": -74.0, "samples": 2},
+    {"name": "beacon_5", "signal": -53.5, "samples": 4},
+    {"name": "beacon_6", "signal": -61.0, "samples": 2},
+    {"name": "beacon_7", "signal": -83.3, "samples": 3}
+  ],
+  [
+    {"name": "beacon_1", "signal": -86.6, "samples": 5},
+    {"name": "beacon_2", "signal": -83.4, "samples": 7},
+    {"name": "beacon_3", "signal": -72.2, "samples": 4},
+    {"name": "beacon_4", "signal": -75.0, "samples": 4},
+    {"name": "beacon_5", "signal": -46.0, "samples": 7},
+    {"name": "beacon_6", "signal": -57.8, "samples": 4},
+    {"name": "beacon_7", "signal": -80.2, "samples": 6}
+  ],
+  [
+    {"name": "beacon_1", "signal": -85.0, "samples": 4},
+    {"name": "beacon_2", "signal": -89.5, "samples": 2},
+    {"name": "beacon_3", "signal": -71.0, "samples": 3},
+    {"name": "beacon_4", "signal": -79.0, "samples": 4},
+    {"name": "beacon_5", "signal": -44.2, "samples": 4},
+    {"name": "beacon_6", "signal": -59.0, "samples": 3},
+    {"name": "beacon_7", "signal": -81.0, "samples": 3}
+  ],
+  [
+    {"name": "beacon_1", "signal": -82.6, "samples": 5},
+    {"name": "beacon_2", "signal": -84.3, "samples": 6},
+    {"name": "beacon_3", "signal": -69.2, "samples": 6},
+    {"name": "beacon_4", "signal": -74.7, "samples": 6},
+    {"name": "beacon_5", "signal": -60.7, "samples": 7},
+    {"name": "beacon_6", "signal": -62.0, "samples": 6},
+    {"name": "beacon_7", "signal": -83.0, "samples": 3}
+  ],
+  [
+    {"name": "beacon_1", "signal": -73.0, "samples": 5},
+    {"name": "beacon_2", "signal": -79.0, "samples": 3},
+    {"name": "beacon_3", "signal": -64.0, "samples": 5},
+    {"name": "beacon_4", "signal": -75.5, "samples": 4},
+    {"name": "beacon_5", "signal": -51.0, "samples": 5},
+    {"name": "beacon_6", "signal": -80.0, "samples": 1},
+    {"name": "beacon_7", "signal": -82.3, "samples": 3}
+  ],
+  [
+    {"name": "beacon_1", "signal": -75.0, "samples": 5},
+    {"name": "beacon_2", "signal": -81.3, "samples": 7},
+    {"name": "beacon_3", "signal": -62.2, "samples": 6},
+    {"name": "beacon_4", "signal": -78.0, "samples": 6},
+    {"name": "beacon_5", "signal": -62.3, "samples": 6},
+    {"name": "beacon_6", "signal": -58.6, "samples": 7},
+    {"name": "beacon_7", "signal": -79.4, "samples": 5}
+  ],
+  [
+    {"name": "beacon_1", "signal": -77.0, "samples": 3},
+    {"name": "beacon_2", "signal": -88.6, "samples": 5},
+    {"name": "beacon_3", "signal": -64.5, "samples": 4},
+    {"name": "beacon_4", "signal": -75.5, "samples": 2},
+    {"name": "beacon_5", "signal": -55.8, "samples": 5},
+    {"name": "beacon_6", "signal": -53.8, "samples": 4},
+    {"name": "beacon_7", "signal": -76.2, "samples": 4}
+  ],
+  [
+    {"name": "beacon_1", "signal": -82.4, "samples": 7},
+    {"name": "beacon_2", "signal": -82.8, "samples": 4},
+    {"name": "beacon_3", "signal": -73.0, "samples": 6},
+    {"name": "beacon_4", "signal": -80.3, "samples": 7},
+    {"name": "beacon_5", "signal": -52.3, "samples": 6},
+    {"name": "beacon_6", "signal": -57.3, "samples": 7},
+    {"name": "beacon_7", "signal": -75.3, "samples": 6}
+  ],
+  [
+    {"name": "beacon_1", "signal": -82.7, "samples": 3},
+    {"name": "beacon_2", "signal": -77.8, "samples": 4},
+    {"name": "beacon_3", "signal": -69.0, "samples": 3},
+    {"name": "beacon_4", "signal": -76.8, "samples": 4},
+    {"name": "beacon_5", "signal": -55.3, "samples": 3},
+    {"name": "beacon_6", "signal": -52.2, "samples": 5},
+    {"name": "beacon_7", "signal": -74.8, "samples": 4}
+  ],
+  [
+    {"name": "beacon_1", "signal": -84.2, "samples": 6},
+    {"name": "beacon_2", "signal": -83.6, "samples": 7},
+    {"name": "beacon_3", "signal": -75.4, "samples": 7},
+    {"name": "beacon_4", "signal": -80.2, "samples": 6},
+    {"name": "beacon_5", "signal": -57.7, "samples": 6},
+    {"name": "beacon_6", "signal": -58.8, "samples": 6},
+    {"name": "beacon_7", "signal": -75.2, "samples": 6}
+  ],
+  [
+    {"name": "beacon_1", "signal": -85.0, "samples": 4},
+    {"name": "beacon_2", "signal": -82.7, "samples": 3},
+    {"name": "beacon_3", "signal": -68.2, "samples": 4},
+    {"name": "beacon_4", "signal": -84.8, "samples": 4},
+    {"name": "beacon_5", "signal": -64.5, "samples": 4},
+    {"name": "beacon_6", "signal": -58.8, "samples": 4},
+    {"name": "beacon_7", "signal": -64.5, "samples": 4}
+  ],
+  [
+    {"name": "beacon_1", "signal": -81.0, "samples": 3},
+    {"name": "beacon_2", "signal": -79.7, "samples": 6},
+    {"name": "beacon_3", "signal": -72.3, "samples": 7},
+    {"name": "beacon_4", "signal": -80.0, "samples": 5},
+    {"name": "beacon_5", "signal": -60.5, "samples": 6},
+    {"name": "beacon_6", "signal": -52.8, "samples": 6},
+    {"name": "beacon_7", "signal": -56.0, "samples": 7}
+  ],
+  [
+    {"name": "beacon_1", "signal": -88.3, "samples": 3},
+    {"name": "beacon_2", "signal": -86.0, "samples": 4},
+    {"name": "beacon_3", "signal": -81.3, "samples": 3},
+    {"name": "beacon_4", "signal": -85.3, "samples": 3},
+    {"name": "beacon_5", "signal": -57.8, "samples": 5},
+    {"name": "beacon_6", "signal": -48.0, "samples": 5},
+    {"name": "beacon_7", "signal": -62.8, "samples": 4}
+  ],
+  [
+    {"name": "beacon_1", "signal": -92.0, "samples": 4},
+    {"name": "beacon_2", "signal": -92.2, "samples": 5},
+    {"name": "beacon_3", "signal": -80.5, "samples": 6},
+    {"name": "beacon_4", "signal": -85.0, "samples": 4},
+    {"name": "beacon_5", "signal": -70.3, "samples": 6},
+    {"name": "beacon_6", "signal": -44.7, "samples": 7},
+    {"name": "beacon_7", "signal": -58.7, "samples": 6}
+  ],
+  [
+    {"name": "beacon_1", "signal": -90.8, "samples": 4},
+    {"name": "beacon_2", "signal": -95.0, "samples": 1},
+    {"name": "beacon_3", "signal": -80.0, "samples": 5},
+    {"name": "beacon_4", "signal": -87.6, "samples": 5},
+    {"name": "beacon_5", "signal": -72.6, "samples": 5},
+    {"name": "beacon_6", "signal": -44.0, "samples": 5},
+    {"name": "beacon_7", "signal": -62.0, "samples": 4}
+  ],
+  [
+    {"name": "beacon_1", "signal": -95.5, "samples": 2},
+    {"name": "beacon_2", "signal": -94.0, "samples": 2},
+    {"name": "beacon_3", "signal": -87.8, "samples": 5},
+    {"name": "beacon_4", "signal": -92.7, "samples": 6},
+    {"name": "beacon_5", "signal": -70.9, "samples": 7},
+    {"name": "beacon_6", "signal": -46.0, "samples": 7},
+    {"name": "beacon_7", "signal": -59.3, "samples": 7}
+  ],
+  [
+    {"name": "beacon_1", "signal": -96.0, "samples": 2},
+    {"name": "beacon_2", "signal": -97.0, "samples": 1},
+    {"name": "beacon_3", "signal": -84.3, "samples": 3},
+    {"name": "beacon_4", "signal": -90.8, "samples": 4},
+    {"name": "beacon_5", "signal": -81.2, "samples": 4},
+    {"name": "beacon_6", "signal": -55.8, "samples": 4},
+    {"name": "beacon_7", "signal": -58.2, "samples": 5}
+  ],
+  [
+    {"name": "beacon_1", "signal": -99.5, "samples": 2},
+    {"name": "beacon_2", "signal": -95.0, "samples": 1},
+    {"name": "beacon_3", "signal": -90.3, "samples": 6},
+    {"name": "beacon_4", "signal": -96.3, "samples": 3},
+    {"name": "beacon_5", "signal": -79.4, "samples": 5},
+    {"name": "beacon_6", "signal": -53.6, "samples": 7},
+    {"name": "beacon_7", "signal": -49.0, "samples": 7}
+  ],
+  [
+    {"name": "beacon_3", "signal": -90.0, "samples": 3},
+    {"name": "beacon_4", "signal": -93.7, "samples": 3},
+    {"name": "beacon_5", "signal": -81.2, "samples": 5},
+    {"name": "beacon_6", "signal": -54.4, "samples": 5},
+    {"name": "beacon_7", "signal": -46.4, "samples": 5}
+  ],
+  [
+    {"name": "beacon_3", "signal": -92.3, "samples": 6},
+    {"name": "beacon_5", "signal": -84.7, "samples": 7},
+    {"name": "beacon_6", "signal": -60.1, "samples": 7},
+    {"name": "beacon_7", "signal": -46.3, "samples": 7}
+  ],
+  [
+    {"name": "beacon_3", "signal": -93.3, "samples": 3},
+    {"name": "beacon_5", "signal": -83.8, "samples": 5},
+    {"name": "beacon_6", "signal": -63.2, "samples": 4},
+    {"name": "beacon_7", "signal": -35.6, "samples": 5}
+  ],
+  [
+    {"name": "beacon_3", "signal": -91.8, "samples": 5},
+    {"name": "beacon_4", "signal": -98.0, "samples": 1},
+    {"name": "beacon_5", "signal": -82.3, "samples": 7},
+    {"name": "beacon_6", "signal": -66.7, "samples": 7},
+    {"name": "beacon_7", "signal": -42.0, "samples": 7}
+  ],
+  [
+    {"name": "beacon_1", "signal": -100.0, "samples": 1},
+    {"name": "beacon_3", "signal": -89.8, "samples": 4},
+    {"name": "beacon_4", "signal": -97.0, "samples": 1},
+    {"name": "beacon_5", "signal": -82.5, "samples": 4},
+    {"name": "beacon_6", "signal": -60.6, "samples": 5},
+    {"name": "beacon_7", "signal": -47.2, "samples": 4}
+  ],
+  [
+    {"name": "beacon_2", "signal": -96.0, "samples": 1},
+    {"name": "beacon_3", "signal": -91.2, "samples": 4},
+    {"name": "beacon_4", "signal": -93.0, "samples": 1},
+    {"name": "beacon_5", "signal": -73.6, "samples": 5},
+    {"name": "beacon_6", "signal": -57.2, "samples": 5},
+    {"name": "beacon_7", "signal": -52.5, "samples": 4}
+  ],
+  [
+    {"name": "beacon_1", "signal": -95.5, "samples": 4},
+    {"name": "beacon_2", "signal": -97.0, "samples": 1},
+    {"name": "beacon_3", "signal": -88.0, "samples": 4},
+    {"name": "beacon_4", "signal": -92.2, "samples": 5},
+    {"name": "beacon_5", "signal": -75.6, "samples": 5},
+    {"name": "beacon_6", "signal": -54.7, "samples": 7},
+    {"name": "beacon_7", "signal": -57.9, "samples": 7}
+  ],
+  [
+    {"name": "beacon_1", "signal": -85.0, "samples": 1},
+    {"name": "beacon_2", "signal": -91.0, "samples": 2},
+    {"name": "beacon_3", "signal": -83.0, "samples": 2},
+    {"name": "beacon_4", "signal": -84.0, "samples": 1},
+    {"name": "beacon_5", "signal": -59.5, "samples": 2},
+    {"name": "beacon_6", "signal": -51.0, "samples": 5},
+    {"name": "beacon_7", "signal": -56.4, "samples": 5}
+  ],
+  [
+    {"name": "beacon_1", "signal": -84.8, "samples": 5},
+    {"name": "beacon_2", "signal": -84.0, "samples": 3},
+    {"name": "beacon_3", "signal": -77.9, "samples": 7},
+    {"name": "beacon_4", "signal": -85.5, "samples": 4},
+    {"name": "beacon_5", "signal": -57.7, "samples": 6},
+    {"name": "beacon_6", "signal": -48.2, "samples": 5},
+    {"name": "beacon_7", "signal": -60.9, "samples": 7}
+  ]
 ]
 INDEX_NOW = 0
 
@@ -67,7 +439,7 @@ write_road = None
 MAC_ADDRESS = None
 JSON_PARSE_ERROR = "JSON parse error:"
 
-HOST_ADDRESS = "http://192.168.31.181:8000"
+HOST_ADDRESS = "http://172.20.10.2:8000"
 
 def wifi_connect(ssid, pwd):
     wifi = network.WLAN(network.STA_IF)
@@ -290,8 +662,6 @@ def send_signal():
     url_post = HOST_ADDRESS + "/send_signal"
     current_beacon_data = BEACONSDATA[INDEX_NOW]
 
-    for beacon in current_beacon_data:
-        beacon["signal"] = int(beacon["signal"])
     payload = {"mac": MAC_ADDRESS,"map_name": map_name, "list": current_beacon_data}
     INDEX_NOW += 1
 

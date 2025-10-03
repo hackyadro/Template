@@ -199,7 +199,7 @@ class BLEScanner:
                 self.accumulated_data.clear()
                 last_report_time = time.time()
                 poll_count = 0
-            
+
             # Соблюдаем частоту опроса 10 Гц
             elapsed = time.time() - poll_start_time
             sleep_time = max(0, self.poll_period - elapsed)
