@@ -14,6 +14,6 @@
 5) use mpremote to transfer files:
    1) `mpremote fs cp main.py :/main.py`
    2) `mpremote fs cp boot.py :/boot.py`
-   3) configurate the mqtt_config.json with the wifi access point info and mqtt ip address and port
+   3) configurate the mqtt_config.json with the wifi access point info and mqtt ip address and port (example is provided in mqtt_config.json)
    4) upload config `mpremote fs cp mqtt_config.json :/mqtt_config.json`
 6) reset the controller via button or sending `ctrl+D` after connecting via `mpremote connect <com-port>`
