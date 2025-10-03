@@ -1006,9 +1006,45 @@ async def websocket_endpoint(websocket: WebSocket, db: AsyncSession = Depends(ge
                         }))
                         continue
 
-                    # Обновляем базовые координаты устройства
+                    # Получаем device_id
+                    device_result = await db.execute(
+                        text("SELECT id FROM devices WHERE mac = :mac"),
+                        {"mac": mac}
+                    )
+                    device = device_result.first()
+
+                    if not device:
+                        await websocket.send_text(json.dumps({
+                            "type": "error",
+                            "data": {"message": "Device not found"}
+                        }))
+                        continue
+
+                    device_id = device.id
+
+                    # Удаляем все предыдущие позиции этого устройства
                     await db.execute(
-                        text("UPDATE devices SET base_x = :x, base_y = :y WHERE mac = :mac"),
+                        text("DELETE FROM positions WHERE device_id = :device_id"),
+                        {"device_id": device_id}
+                    )
+
+                    # Закрываем все активные road_sessions для этого устройства
+                    await db.execute(
+                        text("""
+                            UPDATE road_sessions
+                            SET is_active = false, ended_at = CURRENT_TIMESTAMP
+                            WHERE device_id = :device_id AND is_active = true
+                        """),
+                        {"device_id": device_id}
+                    )
+
+                    # Обновляем базовые координаты устройства и сбрасываем current_road_session_id
+                    await db.execute(
+                        text("""
+                            UPDATE devices
+                            SET base_x = :x, base_y = :y, current_road_session_id = NULL, write_road = false
+                            WHERE mac = :mac
+                        """),
                         {"x": float(x), "y": float(y), "mac": mac}
                     )
                     await db.commit()
