@@ -1,0 +1,11 @@
+services:
+  front:
+    build:
+      context: .                # корень репо
+      dockerfile: ./front.dockerfile  # Dockerfile в корне
+      args:
+        APP_DIR: ./src/front           # путь к проекту (если другой — поменяйте)
+    ports:
+      - "8080:80"               # http://localhost:8080
+    restart: always
+
