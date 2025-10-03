@@ -34,7 +34,6 @@ docker compose up -d
 
 Далее вам необходимо запустить устройство с его boot файлом (читать в README.md из папки esp32.)
 
-
 ## 4. Проверка работы
 - MQTT брокер: `localhost:1883`
 - Подписчик пишет логи в `telemetry_log.csv`
@@ -104,14 +103,12 @@ sudo docker run --rm \
 Mosquitto требует, чтобы файл был приватным. Настроим права:
 
 ```bash
-sudo chmod 600 passwd
+sudo chmod 600 docker/passwd
 ```
 
 ```bash
-sudo chmod +x app/*.py
+sudo chmod 755 app/*
 ```
-
-Теперь доступ только у владельца.
 
 ### 8.3 Конфигурация Docker Compose
 В `docker-compose.yml` должен быть примонтирован файл `passwd`:
