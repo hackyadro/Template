@@ -1,0 +1,51 @@
+version: "3.8"
+
+services:
+  mqtt:
+    image: eclipse-mosquitto:2.0
+    container_name: mqtt_broker
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./docker/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - ./docker/passwd:/mosquitto/config/passwd
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+
+  subscriber:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: telemetry_subscriber
+    working_dir: /app
+    command: python subscriber.py
+    environment:
+      - BROKER_HOST=mqtt
+      - BROKER_PORT=1883
+      - MQTT_USER=42
+      - MQTT_PASS=123123
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./app:/app
+    depends_on:
+      - mqtt
+
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: beacons_ui
+    working_dir: /app
+    command: streamlit run app.py --server.port=8501 --server.address=0.0.0.0
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./app:/app
+    depends_on:
+      - subscriber
+
+volumes:
+  mosquitto_data:
+  mosquitto_log:
