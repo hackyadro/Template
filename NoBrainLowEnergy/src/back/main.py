@@ -30,13 +30,13 @@ BEACON_FILE_PATH = SEARCH_ROOT / "cfg" / "locations.beacons"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=[],  # empty list = no origins allowed
-        allow_credentials=False,
-        allow_methods=[],
-        allow_headers=[],
-    )
+    # app.add_middleware(
+    #     CORSMiddleware,
+    #     allow_origins=[],  # empty list = no origins allowed
+    #     allow_credentials=False,
+    #     allow_methods=[],
+    #     allow_headers=[],
+    # )
 
     """Manage application lifecycle"""
     global mqtt_client
@@ -228,14 +228,14 @@ if _allowed:
 else:
     allowed_origins = ["http://localhost:3000", "http://localhost:8080"]
 
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# # Add CORS middleware
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=allowed_origins,
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
 
 @app.get("/")
 async def root():
