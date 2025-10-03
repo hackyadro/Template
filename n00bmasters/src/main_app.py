@@ -10,6 +10,7 @@ from math import dist
 
 calc = None
 cur_pos = [0,0]
+fl = False
 kalman_filter = None
 
 BEACON_COUNT = 8
@@ -45,6 +46,8 @@ def on_connect(client, userdata, flags, reason_code, properties):
         print("FATAL: fingerprint_config.json not found! Please run fingerprint calibration first.")
         return
 
+    with open('../path.path', 'w') as f:
+        f.write(f"X;Y\n")
     calc = PositionCalculator(points, fingerprints)
     print(f"Fingerprints: {fingerprints}")
 
@@ -80,7 +83,7 @@ def on_connect(client, userdata, flags, reason_code, properties):
 
 
 def on_message(client, userdata, msg):
-    global cur_pos, kalman_filter, position_plot, fig, calc, f_plot, r_plot
+    global cur_pos, fl, kalman_filter, position_plot, fig, calc, f_plot, r_plot
 
     try:
         data = json.loads(msg.payload.decode("utf-8"))
@@ -109,15 +112,20 @@ def on_message(client, userdata, msg):
         kalman_filter.predict()
         kalman_filter.update(np.array([[raw_pos[0]], [raw_pos[1]]]))
         filtered_state = kalman_filter.kf.x
-        cur_pos = [filtered_state[0], filtered_state[1]]
+        if dist(cur_pos, (filtered_state[0], filtered_state[1])) < 5 or not fl:
+            cur_pos = [filtered_state[0], filtered_state[1]]
+            fl = True
         pos_x.append(cur_pos[0])
         pos_y.append(cur_pos[1])
 
         print(f"RAW: ({raw_pos[0]:.2f}, {raw_pos[1]:.2f})  |  FILTERED: ({cur_pos[0]:.2f}, {cur_pos[1]:.2f})")
 
+        with open('../path.path', 'a') as f:
+            f.write(f"{str(cur_pos[0])};{str(cur_pos[1])}\n")
         # Draw
         f_plot.set_data(pos_x[:-1], pos_y[:-1]) 
         position_plot.set_data([cur_pos[0]], [cur_pos[1]])
+        fig.savefig("static/plot.png")
         fig.canvas.draw(); fig.canvas.flush_events()
         print(cur_pos)
 
