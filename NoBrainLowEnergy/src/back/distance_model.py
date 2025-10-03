@@ -1,3 +1,4 @@
+import math
 import ujson as json
 
 try:
@@ -28,7 +29,8 @@ class Distance_model:
     def get_position_from_message(self, message: ReceivedMQTTMessage, beacons: dict[str, tuple[float, float]]) -> tuple[float, float]:
         """Estimate position directly from an incoming MQTT message and known beacon positions."""
         distances = self.Calc(message)
-        return self.position_from_distances_numpy(distances, beacons)
+        return self.position_from_distances_trilat(distances, beacons)
+        # return self.position_from_distances_numpy(distances, beacons)
 
 
     def Calc(self, message: ReceivedMQTTMessage) -> dict[str, list[float] | list[str]]:
@@ -150,6 +152,83 @@ class Distance_model:
         y_est = inv_det * (-ata10 * atb0 + ata00 * atb1)
 
         return (x_est, y_est)
+
+    def position_from_distances_trilat(
+        self,
+        distances: dict[str, list[float] | list[str]],
+        beacons: dict[str, tuple[float, float]],
+    ) -> tuple[float, float]:
+        """Estimate position using simple trilateration with the three nearest beacons.
+
+        Args:
+            distances: dict as returned by Calc with aligned "names" and "distances" lists.
+            beacons: Mapping of beacon name to (x, y) coordinates in meters.
+
+        Returns:
+            Estimated (x, y) position. Returns (nan, nan) when estimation is impossible.
+        """
+
+        if not isinstance(distances, dict):
+            return (float("nan"), float("nan"))
+
+        names = distances.get("names") or []
+        dist_values = distances.get("distances") or []
+
+        candidates: list[tuple[float, float, float]] = []
+        for name, dist in zip(names, dist_values):
+            if not isinstance(name, str):
+                name = str(name)
+            try:
+                coord = beacons[str(name)]
+            except Exception:
+                continue
+
+            try:
+                dist_f = float(dist)
+            except Exception:
+                continue
+
+            if not math.isfinite(dist_f):
+                continue
+            if dist_f <= 0.0:
+                continue
+
+            x, y = float(coord[0]), float(coord[1])
+            candidates.append((x, y, dist_f))
+
+        if len(candidates) < 3:
+            return (float("nan"), float("nan"))
+
+        candidates.sort(key=lambda item: item[2])
+        anchors = candidates[:3]
+
+        (x1, y1, d1), (x2, y2, d2), (x3, y3, d3) = anchors
+
+        a00 = 2.0 * (x2 - x1)
+        a01 = 2.0 * (y2 - y1)
+        b0 = d1**2 - d2**2 + x2**2 - x1**2 + y2**2 - y1**2
+
+        a10 = 2.0 * (x3 - x1)
+        a11 = 2.0 * (y3 - y1)
+        b1 = d1**2 - d3**2 + x3**2 - x1**2 + y3**2 - y1**2
+
+        det = a00 * a11 - a01 * a10
+
+        if abs(det) < 1e-9:
+            # Fallback: inverse-distance weighted centroid of the three anchors.
+            weights = [1.0 / max(d, 1e-6) for _, _, d in anchors]
+            total = sum(weights)
+            if total == 0.0:
+                return (float("nan"), float("nan"))
+            x_est = sum(w * x for (x, _, _), w in zip(anchors, weights)) / total
+            y_est = sum(w * y for (_, y, _), w in zip(anchors, weights)) / total
+            return (float(x_est), float(y_est))
+
+        inv_det = 1.0 / det
+        x_est = inv_det * (a11 * b0 - a01 * b1)
+        y_est = inv_det * (-a10 * b0 + a00 * b1)
+
+        return (float(x_est), float(y_est))
 
     def position_from_distances_numpy(
         self,
