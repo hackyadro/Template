@@ -34,6 +34,18 @@ docker compose down
 docker compose up --build -d
 ```
 
+## Конфигурация платы
+Для загрузки программы используется **Thonny IDE**. 
+1. Нажать Tools > Options > Interpreter > "MicroPythonESP32" > OK.
+2. Нажать кнопку "STOP", чтобы плата подключилась.
+3. File > Open > открыть файлы main.py и networking.py.
+4. File > Save As > MicroPython Device > указать соответствующий File Name > OK. 
+5. В файле networking.py установить "WIFI_SSID" и "WIFI_PASSWORD". Сохранить через п.4.
+
+* Любое сохранение файлов по п. 4.
+* Для запуска нажать F5 или зеленую кнопку Run.
+* При возникновении проблем с платой (напр., Device is busy), нажать STOP. Далее, можно заново начинать работу или сохранять файлы.
+
 ---
 
 ## Запуск
