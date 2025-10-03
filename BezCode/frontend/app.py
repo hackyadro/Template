@@ -1,3 +1,4 @@
+import datetime
 import streamlit as st
 import json
 import time
@@ -19,33 +20,14 @@ class MQTTWebSocketClient:
     def __init__(self):
         self.client = mqtt.Client(client_id="FrontendWS", transport="websockets")
         self.current_position = {"x": 2.5, "y": 2.5}
-        self.detected_beacons = []  # Все обнаруженные маяки в реальном времени
-        self.positioning_beacons = []  # Маяки, использованные для позиционирования
+        self.detected_beacons = [] 
+        self.positioning_beacons = []  
         self.positions_history = []
         self.connected = False
         self.beacon_config = {}
+        self.route_file_path = None
+        self.route_file_content = None
         
-    # def load_beacon_config(self):
-    #     """Загружает конфигурацию всех маяков из файла"""
-    #     beacons = {}
-    #     try:
-    #         beacons_file = "/app/data/standart.beacons"
-    #         if os.path.exists(beacons_file):
-    #             with open(beacons_file, 'r') as f:
-    #                 lines = f.readlines()
-    #                 for line in lines[1:]:
-    #                     if line.strip():
-    #                         name, x, y = line.strip().split(';')
-    #                         beacons[name] = {
-    #                             'x': float(x),
-    #                             'y': float(y),
-    #                             'name': name
-    #                         }
-    #             print(f"Loaded {len(beacons)} beacons from configuration")
-    #     except Exception as e:
-    #         print(f"Error loading beacon config: {e}")
-    #     return beacons
-    
     def publish_beacon_config(self, beacons_dict):
         try:
             beacon_data = {
@@ -60,6 +42,71 @@ class MQTTWebSocketClient:
             print(f"Failed to publish beacon configuration: {e}")
             return False
 
+    def start_route_recording(self):
+        try:
+            # Создаем имя файла с временной меткой
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            self.route_file_path = f"/app/data/route_{timestamp}.path"
+            
+            # Создаем директорию если не существует
+            os.makedirs(os.path.dirname(self.route_file_path), exist_ok=True)
+            
+            # Записываем заголовок
+            with open(self.route_file_path, 'w') as f:
+                f.write("X;Y\n")
+            
+            # Сбрасываем содержимое для скачивания
+            self.route_file_content = "X;Y\n"
+            
+            print(f"🚀 Started recording route to: {self.route_file_path}")
+            return True
+        except Exception as e:
+            print(f"Error starting route recording: {e}")
+            return False
+        
+    def stop_route_recording(self):
+        """Останавливает запись маршрута"""
+        try:
+            if self.route_file_path and os.path.exists(self.route_file_path):
+                # Читаем финальное содержимое файла для скачивания
+                with open(self.route_file_path, 'r') as f:
+                    self.route_file_content = f.read()
+                
+                print(f"🛑 Stopped recording route. File: {self.route_file_path}")
+                
+                # Статистика
+                lines = self.route_file_content.strip().split('\n')
+                point_count = len(lines) - 1  # minus header
+                print(f"📊 Recorded {point_count} points")
+                return True
+            return False
+        except Exception as e:
+            print(f"Error stopping route recording: {e}")
+            return False
+    
+    def save_position_to_file(self, x, y):
+        """Сохраняет текущую позицию в файл маршрута"""
+        if self.route_file_path:
+            try:
+                # Заменяем точки на запятые для десятичных разделителей
+                x_str = f"{x:.1f}".replace('.', ',')
+                y_str = f"{y:.1f}".replace('.', ',')
+                
+                line = f"{x_str};{y_str}\n"
+                
+                # Записываем в файл
+                with open(self.route_file_path, 'a') as f:
+                    f.write(line)
+                
+                # Обновляем содержимое для скачивания
+                if self.route_file_content is not None:
+                    self.route_file_content += line
+                
+                return True
+            except Exception as e:
+                print(f"Error saving position to file: {e}")
+                return False
+        return False
         
     def on_connect(self, client, userdata, flags, rc):
         self.connected = True
@@ -72,21 +119,26 @@ class MQTTWebSocketClient:
             payload = json.loads(msg.payload.decode())
             
             if msg.topic == "navigation/position/current":
+                new_x = payload['x']
+                new_y = payload['y']
+                
                 self.current_position = {
-                    "x": payload['x'],
-                    "y": payload['y'],
+                    "x": new_x,
+                    "y": new_y,
                     "timestamp": payload.get('timestamp', time.time())
                 }
                 self.positioning_beacons = payload.get('used_beacons', [])
                 
-                # Сохраняем историю позиций
                 self.positions_history.append({
                     'x': self.current_position['x'],
                     'y': self.current_position['y'],
                     'timestamp': self.current_position['timestamp']
                 })
+
+                # Сохраняем позицию в файл если запись маршрута активна
+                if st.session_state.get('route_started', False):
+                    self.save_position_to_file(new_x, new_y)
                 
-                # Ограничиваем размер истории
                 if len(self.positions_history) > 50:
                     self.positions_history.pop(0)
                     
@@ -106,7 +158,7 @@ class MQTTWebSocketClient:
             st.error(f"WebSocket connection error: {e}")
 
 def create_navigation_map(current_pos, beacon_config, positioning_beacons, history):
-    """Создает карту навигации с различными типами маяков"""
+    # Создает карту навигации с различными типами маяков
     fig = go.Figure()
     
     # Определяем границы карты
@@ -244,9 +296,10 @@ def main():
 
     if 'route_started' not in st.session_state:
         st.session_state.route_started = False
+        
+    if 'show_download' not in st.session_state:
+        st.session_state.show_download = False
 
-    # st_autorefresh(interval=500, key="data_refresh")
-    
     with st.sidebar:
         refresh_rate = st.sidebar.slider(
             "Частота обновления (Гц)",
@@ -260,7 +313,12 @@ def main():
         # Ползунок для выбора частоты
         refresh_interval = int(1000 / refresh_rate) 
         
-        st_autorefresh(interval=refresh_interval, key="data_refresh")
+        # Автообновление только если маршрут активен
+        if st.session_state.route_started:
+            st_autorefresh(interval=refresh_interval, key="data_refresh")
+        else:
+            # Если маршрут не активен, используем очень редкое обновление или отключаем
+            st_autorefresh(interval=30000, key="data_refresh_slow")  # 30 секунд
         
         st.sidebar.write(f"**Текущая частота:** {refresh_rate} Гц")
         st.sidebar.write(f"**Интервал:** {refresh_interval} мс")
@@ -328,11 +386,16 @@ def main():
             disabled=not beacons_loaded,
             help="Загрузите конфигурацию маяков для активации" if not beacons_loaded else "Начать построение маршрута"
         ):
-            start_command = {"command": "start_routing", "ms": refresh_interval}
+            start_command = {"command": "start_routing", "hz": refresh_rate}
             client.client.publish("navigation/route/control", json.dumps(start_command))
-            st.session_state.route_started = True
-            st.success("Успешно!")
             
+            if client.start_route_recording():
+                st.session_state.route_started = True
+                st.session_state.show_download = False
+                st.success("Успешно! Начата запись маршрута в файл.")
+            else:
+                st.error("Ошибка при начале записи маршрута")
+
     # Основной интерфейс
     col1, col2 = st.columns([2, 1])
     
@@ -344,6 +407,7 @@ def main():
             client.positions_history
         )
         st.plotly_chart(fig, use_container_width=True)
+        
         if st.session_state.route_started:
             st.markdown("---")
             col_end1, col_end2, col_end3 = st.columns([1, 2, 1])
@@ -354,14 +418,48 @@ def main():
                     use_container_width=True,
                     help="Завершить текущий маршрут и сбросить навигацию"
                 ):
-                    end_command = {"command": "end_routing"}
+                    end_command = {"command": "end_routing", "hz": refresh_rate}
                     client.client.publish("navigation/route/control", json.dumps(end_command))
-                    st.session_state.route_started = False
-                    st.success("Маршрут завершен!")
-                    st.rerun()
-            st.info("Маршрут активен")
+                    
+                    # Останавливаем запись в файл
+                    if client.stop_route_recording():
+                        st.session_state.route_started = False
+                        st.session_state.show_download = True
+                        st.success("Маршрут завершен! Файл готов для скачивания.")
+                        
+                        # Показываем информацию о сохраненном файле
+                        if client.route_file_content:
+                            lines = client.route_file_content.strip().split('\n')
+                            point_count = len(lines) - 1
+                            st.info(f"Записано точек: {point_count}")
+                    
+                    # Убираем st.rerun() чтобы не перезагружать интерфейс
+            
+            st.info("Маршрут активен - запись в файл идет")
         else:
             st.info("Маршрут не активен")
+        
+        # Показываем кнопку скачивания после завершения маршрута (вне зависимости от состояния route_started)
+        if st.session_state.get('show_download', False) and client.route_file_content:
+            st.markdown("---")
+            st.subheader("Скачать маршрут")
+            
+            # Создаем понятное имя файла
+            download_filename = f"маршрут_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')}.path"
+            
+            # Кнопка скачивания
+            st.download_button(
+                label="⬇Скачать файл маршрута (.path)",
+                data=client.route_file_content,
+                file_name=download_filename,
+                mime="text/plain",
+                use_container_width=True,
+                help="Скачайте файл с координатами пройденного маршрута"
+            )
+            
+            # Предпросмотр содержимого
+            with st.expander("Предпросмотр файла"):
+                st.code(client.route_file_content, language="text")
     
     
     with col2:
@@ -373,7 +471,7 @@ def main():
         status_color = "🟢" if client.connected else "🔴"
         st.write(f"{status_color} MQTT WebSocket: {'Подключен' if client.connected else 'Что-то не так'}")
 
-        st.subheader("Мояки для позиции")
+        st.subheader("Маяки для позиции")
         if client.positioning_beacons:
             for beacon in client.positioning_beacons:
                 beacon_name = beacon.get('name', 'Unknown')
@@ -384,7 +482,7 @@ def main():
                         pos = client.beacon_config[beacon_name]
                         st.write(f"**Position:** ({pos['x']}, {pos['y']})")
         else:
-            st.info("Надо запустить скорее всего")
+            st.info("Данные появятся после запуска")
         
         st.subheader("Все маяки")
         if client.beacon_config:
@@ -393,7 +491,7 @@ def main():
             if len(client.beacon_config) > 8:
                 st.write(f"... и еще {len(client.beacon_config) - 8}")
         else:
-            st.warning("Не загрузили маяки")
+            st.warning("Маяки не загружены")
         
         st.subheader("История позиций")
         if client.positions_history:
@@ -404,7 +502,15 @@ def main():
                 hide_index=True
             )
         else:
-            st.info("Нету пока, запусти")
+            st.info("Данные появятся после запуска")
+            
+        # Показываем статус записи файла
+        if st.session_state.route_started:
+            st.subheader("Запись маршрута")
+            st.success("Активна")
+            if client.positions_history:
+                latest_pos = client.positions_history[-1]
+                st.write(f"Последняя запись: ({latest_pos['x']:.1f}, {latest_pos['y']:.1f})")
             
 
 if __name__ == "__main__":

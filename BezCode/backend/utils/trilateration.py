@@ -58,7 +58,7 @@ class Trilateration:
         
         position = (float(result[0]), float(result[1]))
         position = move_point_inside(position, positioning_area)
-
+        position = {'x':position[0], 'y':position[1]}
         return position, used_beacons
         
         #return None, []
