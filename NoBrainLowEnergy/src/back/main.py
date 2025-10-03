@@ -26,8 +26,18 @@ mqtt_client = None
 SEARCH_ROOT = Path(__file__).resolve().parent
 BEACON_FILE_PATH = SEARCH_ROOT / "cfg" / "locations.beacons"
 
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[],  # empty list = no origins allowed
+        allow_credentials=False,
+        allow_methods=[],
+        allow_headers=[],
+    )
+
     """Manage application lifecycle"""
     global mqtt_client
     

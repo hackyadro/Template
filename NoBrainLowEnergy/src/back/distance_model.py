@@ -12,7 +12,7 @@ from models import ReceivedMQTTMessage
 class Distance_model:
     def __init__(self):
         # Environmental constant (path-loss exponent). Typical indoor: 2.0 - 3.0
-        self.env_const = 3
+        self.env_const = 3.5
         print("Distance model constructor do smth")
 
     def dist(self, rssi: float, baseline: float) -> float:
