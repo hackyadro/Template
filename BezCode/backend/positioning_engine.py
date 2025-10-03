@@ -12,10 +12,10 @@ class PositioningEngine:
         self.trilateration = Trilateration()
         self.current_position = {"x": 2.5, "y": 2.5}
         self.used_beacons = []
-        # self._smoothing_alpha = 0.3
         self._current_max_delta = 2.0
         self.beacon_positions = {}
         self.positioning_area = None
+
         self.msg_buffer_count = 0
         self.msg_buffer: dict[str, dict[str, float]] = {}
     
@@ -46,7 +46,7 @@ class PositioningEngine:
                     self.msg_buffer[key]["rssi_sum"] += value
                     self.msg_buffer_count += 1
 
-                if self.msg_buffer_count < 3:
+                if self.msg_buffer_count < 5:
                     return
                 
                 avg_beacons_rssi: dict[str, float] = {}
@@ -95,8 +95,8 @@ class PositioningEngine:
                             scale_factor = self._current_max_delta / distance
                             position['x'] = self.current_position['x'] + delta_x * scale_factor
                             position['y'] = self.current_position['y'] + delta_y * scale_factor
-                            print(f"🔄 Сглажено сильное смещение: {distance:.2f} > {self._current_max_delta:.2f}")
-                            print(f"📈 Увеличена максимальная дельта до: {self._current_max_delta:.2f}")
+                            print(f"Сглажено сильное смещение: {distance:.2f} > {self._current_max_delta:.2f}")
+                            print(f"Увеличена максимальная дельта до: {self._current_max_delta:.2f}")
                         else:
                             self._current_max_delta = max(base_max_delta, self._current_max_delta * decay_factor)
                         self.current_position = {
