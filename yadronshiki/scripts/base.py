@@ -11,8 +11,8 @@ BROKER = "192.168.1.104"
 PORT = 1883
 TOPIC = "beacons/discovered"
 
-FILE_BEACONS = "standart.beacons"
-FILE_PATH = "standart.path"
+FILE_BEACONS = "../standart.beacons"
+FILE_PATH = "../standart.path"
 FILE_CALIBRATION = "calibration.json"
 
 DEFAULT_TX_POWER = -59.0
