@@ -1,0 +1,24 @@
+[project]
+name = "yadro_bacons"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Tony",email = "a.lukisha@g.nsu.ru"}
+]
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi (>=0.118.0,<0.119.0)",
+    "uvicorn[standard] (>=0.37.0,<0.38.0)",
+    "websockets (>=15.0.1,<16.0.0)",
+    "numpy (>=2.3.3,<3.0.0)",
+    "scipy (>=1.16.2,<2.0.0)",
+    "mqtt (>=0.0.1,<0.0.2)",
+    "paho-mqtt (>=2.1.0,<3.0.0)",
+    "mpremote (>=1.26.1,<2.0.0)",
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
