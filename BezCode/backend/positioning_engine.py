@@ -14,6 +14,7 @@ class PositioningEngine:
         self.used_beacons = []
         self._smoothing_alpha = 0.3
         
+        self.msg_buffer: dict[str, dict[str, float]] = {}
         self.beacon_positions = self.load_beacon_positions()
         self.positioning_area = simple_convex_hull(
             tuple(map(lambda b: (b['x'], b['y']), self.beacon_positions.values()))
@@ -78,13 +79,12 @@ class PositioningEngine:
                 print(f"📍 Total beacons with known positions: {len(beacons_data)}")
                 
                 if len(beacons_data) >= 3:
-                    position, used_beacons = self.trilateration.calculate_position(beacons_data)
+                    position, used_beacons = self.trilateration.calculate_position(beacons_data, self.positioning_area)
 
                     print(f"📍 Position: {position}")
                     print(f"📍 Used beacons: {used_beacons}")
                     
                     if position:
-                        position['timestamp'] = time.time()
                         # Сглаживание
                         # smoothed_x = (
                         #     self._smoothing_alpha * position['x'] +
@@ -97,7 +97,6 @@ class PositioningEngine:
                         self.current_position = {
                             "x": round(position['x'], 2), 
                             "y": round(position['y'], 2), 
-                            "timestamp": position['timestamp']
                         }
                         self.used_beacons = used_beacons
                         self.publish_position(self.current_position, used_beacons)
@@ -116,7 +115,6 @@ class PositioningEngine:
         payload = {
             "x": position["x"],
             "y": position["y"],
-            "timestamp": position["timestamp"],
             "used_beacons": [
                 {
                     "name": b["name"],
@@ -137,7 +135,19 @@ class PositioningEngine:
         self.client.on_message = self.on_message
         print("🚀 Starting Positioning Engine...")
         self.client.connect("mqtt-broker", 1883, 60)
+
+        # with open("etalon2.txt", "r") as f:
+        #     msgs = f.read().split("\n\n")
+        #     for msg in msgs:
+        #         engine.on_message(None, None, MSG(msg))
+        #         time.sleep(0.5)
+
         self.client.loop_forever()
+
+class MSG:
+    def __init__(self, payload: str):
+        self.topic = "ble/beacons/raw"
+        self.payload = payload.encode()
 
 if __name__ == "__main__":
     engine = PositioningEngine()
