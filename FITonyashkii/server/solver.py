@@ -2,7 +2,7 @@ from typing import Dict, Optional, Iterable
 
 
 class Solver:
-    def __init__(self, beacons: Iterable, tx: int = -65, n: float = 1.5):
+    def __init__(self, beacons: Iterable, tx: int = -65, n: float = 1.0):
         self.beacons = {
             beacon.name: (float(beacon.x), float(beacon.y)) for beacon in beacons
         }
@@ -23,7 +23,7 @@ class Solver:
             x, y = self.beacons[beacon_name]
             distance = float(self.get_distance(beacon_rssi))
             # Use inverse distance as weight (closer beacons have more influence)
-            weight = 1.0 / (distance + 0.1)  # Add small value to avoid division by zero
+            weight = 1.0 / (distance + 0.05)  # Add small value to avoid division by zero
             weighted_x += x * weight
             weighted_y += y * weight
             total_weight += weight

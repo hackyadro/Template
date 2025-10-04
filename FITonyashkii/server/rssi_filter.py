@@ -6,7 +6,7 @@ from filterpy.kalman import KalmanFilter
 class KalmanFilterManager:
     def __init__(self):
         self.filters: Dict[str, Any] = {}
-        self.measurement_uncertainty = 100
+        self.measurement_uncertainty = 120
 
     def initialize_kalman_filter(self):
         # Initialize the Kalman Filter
