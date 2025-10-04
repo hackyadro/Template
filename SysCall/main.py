@@ -13,7 +13,7 @@ WIFI_PASSWORD = "29052006"
 MQTT_BROKER = "10.99.15.57"
 MQTT_CLIENT_ID = ubinascii.hexlify(machine.unique_id())
 TOPIC_PUB = b"registrar/data"
-FREQ = 1.3 #standart
+FREQ = 1.0 #standart
 
 WHITELIST = [
     "beacon_1", "beacon_2", "beacon_3", "beacon_4",
