@@ -53,7 +53,6 @@ class MapServer:
     async def websocket_handler(self, websocket):
         self.connected_clients.add(websocket)
         print(f"WebSocket client connected from {websocket.remote_address}")
-        await self.broadcast_state()
         try:
             async for message in websocket:
                 try:
@@ -192,6 +191,11 @@ class MapServer:
                     await client.send(message)
                 except websockets.exceptions.ConnectionClosed:
                     self.connected_clients.discard(client)
+    
+    async def broadcast_task(self):
+        while True:
+            await self.broadcast_state()
+            await asyncio.sleep(config.BROADCAST_FREQUENCY)
 
     def update(self, udp_data):
         current_time = int(datetime.now().timestamp())
@@ -220,8 +224,6 @@ class MapServer:
                 )
                 if distance >= config.MIN_DISTANCE_TO_UPDATE_ROUTE:
                     self.route_data.append((self.locator.x, self.locator.y))
-
-        asyncio.create_task(self.broadcast_state())
 
     class UDPServerProtocol(asyncio.DatagramProtocol):
         def __init__(self, server):
@@ -257,6 +259,7 @@ class MapServer:
         print(f"Starting WebSocket server on ws://{self.ws_host}:{self.ws_port}")
         await websockets.serve(self.websocket_handler, self.ws_host, self.ws_port)
         asyncio.create_task(self.udp_server())
+        asyncio.create_task(self.broadcast_task())
         await asyncio.Future()  # Run forever
 
 

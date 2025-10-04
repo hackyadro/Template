@@ -50,5 +50,5 @@ class RSSILocator:
             position = self.solver.get_position(self.filtered_rssi)
             # print(position)
             if position:
-                self.x = 0.9 * self.x + 0.1*position[0]
-                self.y = 0.9 * self.y + 0.1*position[1]
+                self.x = 0.95 * self.x + 0.05 * position[0]
+                self.y = 0.95 * self.y + 0.05 * position[1]

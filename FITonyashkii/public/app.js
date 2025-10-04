@@ -29,7 +29,9 @@ class MapInterface {
     this.gridSize = 50;
     this.cellSize = 30;
 
+    // Route state
     this.routeActive = false;
+    this.routeData = []; // массив точек маршрута {x, y}
 
     this.setupCanvas();
     this.setupEventListeners();
@@ -249,22 +251,25 @@ class MapInterface {
     }
   }
 
-  startRoute() {
+
+// Модифицируйте метод startRoute
+startRoute() {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      const message = {
-        type: "start_route",
-      };
+        const message = {
+            type: "start_route",
+        };
 
-      this.ws.send(JSON.stringify(message));
-      this.routeActive = true;
-      this.updateRouteButton();
-      this.showNotification("Маршрут начат!");
+        this.ws.send(JSON.stringify(message));
+        this.routeActive = true;
+        this.routeData = [];
+        this.updateRouteButton();
+        this.showNotification("Маршрут начат!");
 
-      console.log("Начало маршрута:", message);
+        console.log("Начало маршрута:", message);
     } else {
-      this.showNotification("Нет подключения к серверу", true);
+        this.showNotification("Нет подключения к серверу", true);
     }
-  }
+}
 
   finishRoute() {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
@@ -293,6 +298,56 @@ class MapInterface {
         routeButton.textContent = "Начать маршрут";
         routeButton.classList.remove("active");
       }
+    }
+  }
+
+  addRoutePoint(x, y) {
+    if (this.routeActive) {
+      this.routeData.push({ x, y });
+    }
+  }
+
+  drawRoute() {
+    if (!this.routeData || this.routeData.length < 2) return;
+
+    this.ctx.strokeStyle = "#a824c9";
+    this.ctx.lineWidth = 4 * this.scale;
+    this.ctx.lineJoin = "round";
+    this.ctx.lineCap = "round";
+    this.ctx.setLineDash([]); 
+    
+    this.ctx.beginPath();
+    
+    const firstPoint = this.scalePos(this.routeData[0].x, this.routeData[0].y);
+    this.ctx.moveTo(firstPoint.x, firstPoint.y);
+    
+    for (let i = 1; i < this.routeData.length; i++) {
+      const point = this.scalePos(this.routeData[i].x, this.routeData[i].y);
+      this.ctx.lineTo(point.x, point.y);
+    }
+    
+    this.ctx.stroke();
+
+    if (this.routeData.length > 0) {
+      const startPoint = this.scalePos(this.routeData[0].x, this.routeData[0].y);
+      this.ctx.fillStyle = "#2ecc71"; 
+      this.ctx.beginPath();
+      this.ctx.arc(startPoint.x, startPoint.y, 5 * this.scale, 0, Math.PI * 2);
+      this.ctx.fill();
+      
+    }
+
+    // Рисуем конечную точку другим цветом
+    if (this.routeData.length > 1) {
+      const endPoint = this.scalePos(
+        this.routeData[this.routeData.length - 1].x, 
+        this.routeData[this.routeData.length - 1].y
+      );
+      this.ctx.fillStyle = "#e74c3c"; // красный для финиша
+      this.ctx.beginPath();
+      this.ctx.arc(endPoint.x, endPoint.y, 5 * this.scale, 0, Math.PI * 2);
+      this.ctx.fill();
+      
     }
   }
 
@@ -408,9 +463,25 @@ class MapInterface {
       }
     } else if (data.playerPosition && data.objects) {
       // Full map data format
+      const prevX = this.playerPosition.x;
+      const prevY = this.playerPosition.y;
+      
       this.playerPosition = data.playerPosition;
       this.objects = data.objects;
       this.statusValues = data.statusValues || [];
+
+      // Автоматически добавляем точку в маршрут при движении
+      if (this.routeActive) {
+        const distance = Math.sqrt(
+          Math.pow(this.playerPosition.x - prevX, 2) + 
+          Math.pow(this.playerPosition.y - prevY, 2)
+        );
+        
+        // Добавляем точку только если перемещение значительное
+        if (distance > 0.1) {
+          this.addRoutePoint(this.playerPosition.x, this.playerPosition.y);
+        }
+      }
 
       const messageLine = document.getElementById("messageLine");
       if (data.messageLine) {
@@ -420,7 +491,23 @@ class MapInterface {
       }
     } else if (data.x !== undefined && data.y !== undefined) {
       // Simple position update
+      const prevX = this.playerPosition.x;
+      const prevY = this.playerPosition.y;
+      
       this.playerPosition = { x: data.x, y: data.y };
+      
+      // Автоматически добавляем точку в маршрут при движении
+      if (this.routeActive) {
+        const distance = Math.sqrt(
+          Math.pow(this.playerPosition.x - prevX, 2) + 
+          Math.pow(this.playerPosition.y - prevY, 2)
+        );
+        
+        // Добавляем точку только если перемещение значительное
+        if (distance > 0.5) {
+          this.addRoutePoint(this.playerPosition.x, this.playerPosition.y);
+        }
+      }
     } else if (data.type === "error") {
       console.error("Ошибка сервера:", data.message);
       this.showNotification("Ошибка: " + data.message, true);
@@ -517,6 +604,9 @@ class MapInterface {
       this.drawGrid();
     }
 
+    // Draw route (добавляем эту строку)
+    this.drawRoute();
+
     // Draw objects
     this.drawObjects();
 
@@ -528,7 +618,7 @@ class MapInterface {
   scalePos(x, y) {
     return {
       x: x * this.cellSize * this.scale + this.offsetX,
-      y: y * this.cellSize * this.scale * -1 + this.offsetY,
+      y: -y * this.cellSize * this.scale + this.offsetY,
     };
   }
 
